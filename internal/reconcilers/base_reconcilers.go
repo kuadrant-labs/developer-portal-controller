@@ -74,9 +74,9 @@ type BaseReconciler struct {
 // blank assignment to verify that BaseReconciler implements reconcile.Reconciler
 var _ reconcile.Reconciler = &BaseReconciler{}
 
-func NewBaseReconciler(client client.Client, scheme *runtime.Scheme) *BaseReconciler {
+func NewBaseReconciler(c client.Client, scheme *runtime.Scheme) *BaseReconciler {
 	return &BaseReconciler{
-		Client: client,
+		Client: c,
 		Scheme: scheme,
 	}
 }

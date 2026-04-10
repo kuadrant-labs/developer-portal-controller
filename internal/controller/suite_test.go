@@ -153,14 +153,14 @@ func deleteAPIKeysWithContext(ctx context.Context, namespace string) {
 	err := k8sClient.List(ctx, apiKeyList, client.InNamespace(namespace))
 	if err == nil {
 		for i := range apiKeyList.Items {
-			k8sClient.Delete(ctx, &apiKeyList.Items[i])
+			_ = k8sClient.Delete(ctx, &apiKeyList.Items[i])
 		}
 	}
 	// Wait for resources to be deleted
 	Eventually(func(g Gomega) {
 		apiKeyList := &devportalv1alpha1.APIKeyList{}
-		k8sClient.List(ctx, apiKeyList, client.InNamespace(namespace))
-		g.Expect(len(apiKeyList.Items)).To(Equal(0))
+		_ = k8sClient.List(ctx, apiKeyList, client.InNamespace(namespace))
+		g.Expect(apiKeyList.Items).To(BeEmpty())
 	}, time.Second*5, time.Millisecond*500).Should(Succeed())
 }
 
@@ -170,14 +170,14 @@ func deleteAPIKeyRequestsWithContext(ctx context.Context, namespace string) {
 	err := k8sClient.List(ctx, apiKeyRequestList, client.InNamespace(namespace))
 	if err == nil {
 		for i := range apiKeyRequestList.Items {
-			k8sClient.Delete(ctx, &apiKeyRequestList.Items[i])
+			_ = k8sClient.Delete(ctx, &apiKeyRequestList.Items[i])
 		}
 	}
 
 	Eventually(func(g Gomega) {
 		apiKeyRequestList := &devportalv1alpha1.APIKeyRequestList{}
-		k8sClient.List(ctx, apiKeyRequestList, client.InNamespace(namespace))
-		g.Expect(len(apiKeyRequestList.Items)).To(Equal(0))
+		_ = k8sClient.List(ctx, apiKeyRequestList, client.InNamespace(namespace))
+		g.Expect(apiKeyRequestList.Items).To(BeEmpty())
 	}, time.Second*5, time.Millisecond*500).Should(Succeed())
 }
 

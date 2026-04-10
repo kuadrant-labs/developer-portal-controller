@@ -136,15 +136,15 @@ var _ = Describe("APIKey Controller", Pending, func() {
 				if err != nil {
 					return ""
 				}
-				//return apiKey.Status.Phase
+				// return apiKey.Status.Phase
 				return "Approved"
 			}, time.Second*10, time.Millisecond*250).Should(Equal("Approved"))
 
 			By("Verifying reviewedBy is set to system")
-			//Expect(apiKey.Status.ReviewedBy).To(Equal("system"))
+			// Expect(apiKey.Status.ReviewedBy).To(Equal("system"))
 
 			By("Verifying it has the correct plan limits")
-			//Expect(*apiKey.Status.Limits.Daily).To(Equal(1000))
+			// Expect(*apiKey.Status.Limits.Daily).To(Equal(1000))
 
 			// By("Checking the Secret was created")
 			// secret := &corev1.Secret{}
