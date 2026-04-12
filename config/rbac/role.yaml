@@ -19,6 +19,21 @@ rules:
 - apiGroups:
   - devportal.kuadrant.io
   resources:
+  - apikeyapprovals
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - devportal.kuadrant.io
+  resources:
+  - apikeyapprovals/status
+  - apikeyrequests/status
+  verbs:
+  - patch
+- apiGroups:
+  - devportal.kuadrant.io
+  resources:
   - apikeyrequests
   - apikeys
   - apiproducts
@@ -30,12 +45,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - devportal.kuadrant.io
-  resources:
-  - apikeyrequests/status
-  verbs:
-  - patch
 - apiGroups:
   - devportal.kuadrant.io
   resources:

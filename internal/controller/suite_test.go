@@ -181,6 +181,23 @@ func deleteAPIKeyRequestsWithContext(ctx context.Context, namespace string) {
 	}, time.Second*5, time.Millisecond*500).Should(Succeed())
 }
 
+func deleteAPIKeyApprovalsWithContext(ctx context.Context, namespace string) {
+	// Clean up APIKeyApprovals
+	approvalList := &devportalv1alpha1.APIKeyApprovalList{}
+	err := k8sClient.List(ctx, approvalList, client.InNamespace(namespace))
+	if err == nil {
+		for i := range approvalList.Items {
+			_ = k8sClient.Delete(ctx, &approvalList.Items[i])
+		}
+	}
+
+	Eventually(func(g Gomega) {
+		apiKeyApprovalList := &devportalv1alpha1.APIKeyApprovalList{}
+		_ = k8sClient.List(ctx, apiKeyApprovalList, client.InNamespace(namespace))
+		g.Expect(apiKeyApprovalList.Items).To(BeEmpty())
+	}, time.Second*5, time.Millisecond*500).Should(Succeed())
+}
+
 func deleteNamespaceWithContext(ctx context.Context, namespace *string) {
 	desiredTestNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: *namespace}}
 

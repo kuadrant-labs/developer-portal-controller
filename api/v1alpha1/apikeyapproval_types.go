@@ -20,6 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// APIKeyApproval condition types
+const (
+	// APIKeyApprovalConditionValid indicates the APIKeyApproval is valid and references an existing APIKeyRequest
+	APIKeyApprovalConditionValid string = "Valid"
+)
+
 type APIKeyRequestReference struct {
 	Name string `json:"name"`
 }
@@ -53,8 +59,13 @@ type APIKeyApprovalSpec struct {
 
 // APIKeyApprovalStatus defines the observed state of APIKeyApproval.
 type APIKeyApprovalStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration reflects the generation of the most recently observed spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions represent the latest available observations of the APIKeyApproval's state
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

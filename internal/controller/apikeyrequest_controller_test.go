@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -110,7 +109,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			By("Verifying APIKeyRequest was created in APIProduct namespace")
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			apiKeyRequestKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+				Name:      APIKeyRequestName(apiKey),
 				Namespace: apiProductNamespace,
 			}
 			Eventually(func() error {
@@ -142,7 +141,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			By("Verifying APIKeyRequest exists")
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			apiKeyRequestKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+				Name:      APIKeyRequestName(apiKey),
 				Namespace: apiProductNamespace,
 			}
 			Eventually(func() error {
@@ -194,7 +193,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
@@ -241,7 +240,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			By("Verifying APIKeyRequest was created in same namespace as APIKey")
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			apiKeyRequestKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, "local-apikey"),
+				Name:      APIKeyRequestName(localAPIKey),
 				Namespace: consumerNamespace, // Should be in the same namespace
 			}
 			Eventually(func() error {
@@ -288,14 +287,14 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			By("Verifying both APIKeyRequests exist")
 			firstRequest := &devportalv1alpha1.APIKeyRequest{}
 			firstKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+				Name:      APIKeyRequestName(apiKey),
 				Namespace: apiProductNamespace,
 			}
 			Expect(k8sClient.Get(ctx, firstKey, firstRequest)).To(Succeed())
 
 			secondRequest := &devportalv1alpha1.APIKeyRequest{}
 			secondKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, "second-apikey"),
+				Name:      APIKeyRequestName(secondAPIKey),
 				Namespace: apiProductNamespace,
 			}
 			Expect(k8sClient.Get(ctx, secondKey, secondRequest)).To(Succeed())
@@ -364,7 +363,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 				},
 			}
 
-			By("Creating an APIKey")
+			By("Creating an APIKey with Failed condition")
 			failedAPIKey := &devportalv1alpha1.APIKey{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "failed-apikey",
