@@ -88,19 +88,19 @@ func (r *APIKeyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Initialize status if empty
-	if apiKey.Status.Phase == "" {
-		apiKey.Status.Phase = apiKeyPhasePending
-	}
-
-	// Process based on approval mode and current phase
-	switch apiKey.Status.Phase {
-	case apiKeyPhasePending:
-		return r.reconcilePending(ctx, apiKey)
-	case apiKeyPhaseApproved:
-		return r.reconcileApproved(ctx, apiKey)
-	case apiKeyPhaseRejected:
-		return r.reconcileRejected(ctx, apiKey)
-	}
+	// if apiKey.Status.Phase == "" {
+	// 	apiKey.Status.Phase = apiKeyPhasePending
+	// }
+	//
+	// // Process based on approval mode and current phase
+	// switch apiKey.Status.Phase {
+	// case apiKeyPhasePending:
+	// 	return r.reconcilePending(ctx, apiKey)
+	// case apiKeyPhaseApproved:
+	// 	return r.reconcileApproved(ctx, apiKey)
+	// case apiKeyPhaseRejected:
+	// 	return r.reconcileRejected(ctx, apiKey)
+	// }
 
 	return ctrl.Result{}, nil
 }
@@ -141,17 +141,17 @@ func (r *APIKeyReconciler) reconcilePending(ctx context.Context, apiKey *devport
 	// Check approval mode
 	if apiProduct.Spec.ApprovalMode == apiKeyApprovalModeAutomatic {
 		// Automatically approved
-		now := metav1.Now()
-		apiKey.Status.ReviewedAt = &now
-		apiKey.Status.ReviewedBy = "system"
-		apiKey.Status.Phase = apiKeyPhaseApproved
+		// now := metav1.Now()
+		// apiKey.Status.ReviewedAt = &now
+		// apiKey.Status.ReviewedBy = "system"
+		// apiKey.Status.Phase = apiKeyPhaseApproved
 		setReadyCondition(apiKey, metav1.ConditionFalse, "AwaitingSecret",
 			"API key was automatically approved, waiting for Secret creation")
 		logger.Info("Automatically approved APIKey")
 
 	} else {
 		// Manual mode - wait for external approval
-		apiKey.Status.Phase = apiKeyPhasePending
+		// apiKey.Status.Phase = apiKeyPhasePending
 		setReadyCondition(apiKey, metav1.ConditionFalse, "NotApproved",
 			"Request awaiting manual approval")
 		logger.Info("APIKey is pending manual approval")
@@ -196,21 +196,21 @@ func (r *APIKeyReconciler) reconcileApproved(ctx context.Context, apiKey *devpor
 	logger := log.FromContext(ctx)
 
 	// Check if Secret already exists
-	if apiKey.Status.SecretRef != nil {
-		secretKey := types.NamespacedName{
-			Name:      apiKey.Status.SecretRef.Name,
-			Namespace: apiKey.Namespace,
-		}
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, secretKey, secret); err == nil {
-			// Secret exists, nothing more to do
-			return ctrl.Result{}, nil
-		} else if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to check Secret existence")
-			return ctrl.Result{}, err
-		}
-		// Secret was deleted, recreate it
-	}
+	// if apiKey.Status.SecretRef != nil {
+	// 	secretKey := types.NamespacedName{
+	// 		Name:      apiKey.Status.SecretRef.Name,
+	// 		Namespace: apiKey.Namespace,
+	// 	}
+	// 	secret := &corev1.Secret{}
+	// 	if err := r.Get(ctx, secretKey, secret); err == nil {
+	// 		// Secret exists, nothing more to do
+	// 		return ctrl.Result{}, nil
+	// 	} else if !apierrors.IsNotFound(err) {
+	// 		logger.Error(err, "Failed to check Secret existence")
+	// 		return ctrl.Result{}, err
+	// 	}
+	// 	// Secret was deleted, recreate it
+	// }
 
 	// Get APIProduct
 	apiProduct, err := r.getAPIProduct(ctx, apiKey)
@@ -263,10 +263,10 @@ func (r *APIKeyReconciler) reconcileApproved(ctx context.Context, apiKey *devpor
 	logger.Info("Created Secret for APIKey", "secret", secret.Name, "namespace", secret.Namespace)
 
 	// Update status with Secret reference and other metadata
-	apiKey.Status.SecretRef = &devportalv1alpha1.SecretReference{
-		Name: secret.Name,
-		Key:  apiKeySecretKey,
-	}
+	// apiKey.Status.SecretRef = &devportalv1alpha1.SecretReference{
+	// 	Name: secret.Name,
+	// 	Key:  apiKeySecretKey,
+	// }
 
 	// Update status with APIKey AuthScheme
 	apiKey.Status.AuthScheme = apiKeyAuthScheme
@@ -303,29 +303,29 @@ func (r *APIKeyReconciler) reconcileRejected(ctx context.Context, apiKey *devpor
 	logger := log.FromContext(ctx)
 
 	// Delete the Secret if it exists
-	if apiKey.Status.SecretRef != nil {
-		secretKey := types.NamespacedName{
-			Name:      apiKey.Status.SecretRef.Name,
-			Namespace: apiKey.Namespace,
-		}
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, secretKey, secret); err == nil {
-			if err := r.Delete(ctx, secret); err != nil {
-				logger.Error(err, "Failed to delete Secret for rejected APIKey")
-				return ctrl.Result{}, err
-			}
-			logger.Info("Deleted Secret for rejected APIKey", "secret", secretKey)
-		} else if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to get Secret")
-			return ctrl.Result{}, err
-		}
-
-		// Clear the SecretRef from status
-		apiKey.Status.SecretRef = nil
-	}
+	// if apiKey.Status.SecretRef != nil {
+	// 	secretKey := types.NamespacedName{
+	// 		Name:      apiKey.Status.SecretRef.Name,
+	// 		Namespace: apiKey.Namespace,
+	// 	}
+	// 	secret := &corev1.Secret{}
+	// 	if err := r.Get(ctx, secretKey, secret); err == nil {
+	// 		if err := r.Delete(ctx, secret); err != nil {
+	// 			logger.Error(err, "Failed to delete Secret for rejected APIKey")
+	// 			return ctrl.Result{}, err
+	// 		}
+	// 		logger.Info("Deleted Secret for rejected APIKey", "secret", secretKey)
+	// 	} else if !apierrors.IsNotFound(err) {
+	// 		logger.Error(err, "Failed to get Secret")
+	// 		return ctrl.Result{}, err
+	// 	}
+	//
+	// 	// Clear the SecretRef from status
+	// 	apiKey.Status.SecretRef = nil
+	// }
 
 	// Set condition to indicate the APIKey was rejected
-	apiKey.Status.Phase = apiKeyPhaseRejected
+	// apiKey.Status.Phase = apiKeyPhaseRejected
 	setReadyCondition(apiKey, metav1.ConditionFalse, "Rejected",
 		"API key request has been rejected")
 
