@@ -23,9 +23,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	devportalv1alpha1 "github.com/kuadrant/developer-portal-controller/api/v1alpha1"
@@ -350,6 +352,142 @@ var _ = Describe("APIKeyRequest Controller", func() {
 			By("Verifying orphaned APIKeyRequest was deleted")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, orphanKey, orphanedRequest)
+				return apierrors.IsNotFound(err)
+			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+		})
+
+		It("should not create shadow resource for Failed APIKeys", func() {
+			controllerReconciler := &APIKeyRequestReconciler{
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
+			}
+
+			By("Creating an APIKey with Failed condition")
+			failedAPIKey := &devportalv1alpha1.APIKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "failed-apikey",
+					Namespace: consumerNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeySpec{
+					APIProductRef: devportalv1alpha1.APIProductReference{
+						Name:      apiProductName,
+						Namespace: apiProductNamespace,
+					},
+					SecretRef: corev1.LocalObjectReference{
+						Name: "non-existent-secret",
+					},
+					PlanTier: "premium",
+					UseCase:  "Testing failed state",
+					RequestedBy: devportalv1alpha1.RequestedBy{
+						UserID: "test-user",
+						Email:  "test@example.com",
+					},
+				},
+				Status: devportalv1alpha1.APIKeyStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               devportalv1alpha1.APIKeyConditionFailed,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 1,
+							Reason:             "SecretNotFound",
+							Message:            "Referenced secret not found",
+							LastTransitionTime: metav1.Now(),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, failedAPIKey)).To(Succeed())
+
+			By("Running reconciliation")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying no shadow APIKeyRequest was created")
+			shadowKey := types.NamespacedName{
+				Name:      APIKeyRequestName(failedAPIKey),
+				Namespace: apiProductNamespace,
+			}
+			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, shadowKey, apiKeyRequest)
+				return apierrors.IsNotFound(err)
+			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
+		})
+
+		It("should delete existing shadow resource when APIKey transitions to Failed state", func() {
+			controllerReconciler := &APIKeyRequestReconciler{
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
+			}
+
+			By("Creating an APIKey without Failed condition")
+			transitionAPIKey := &devportalv1alpha1.APIKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "transition-apikey",
+					Namespace: consumerNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeySpec{
+					APIProductRef: devportalv1alpha1.APIProductReference{
+						Name:      apiProductName,
+						Namespace: apiProductNamespace,
+					},
+					SecretRef: corev1.LocalObjectReference{
+						Name: "valid-secret",
+					},
+					PlanTier: "premium",
+					UseCase:  "Testing state transition",
+					RequestedBy: devportalv1alpha1.RequestedBy{
+						UserID: "test-user",
+						Email:  "test@example.com",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, transitionAPIKey)).To(Succeed())
+
+			By("Running reconciliation to create shadow resource")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying shadow APIKeyRequest was created")
+			shadowKey := types.NamespacedName{
+				Name:      APIKeyRequestName(transitionAPIKey),
+				Namespace: apiProductNamespace,
+			}
+			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, shadowKey, apiKeyRequest)
+				return err == nil
+			}, time.Second*5, time.Millisecond*250).Should(BeTrue())
+
+			By("Updating APIKey to Failed state")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(transitionAPIKey), transitionAPIKey); err != nil {
+					return err
+				}
+				transitionAPIKey.Status.Conditions = []metav1.Condition{
+					{
+						Type:               devportalv1alpha1.APIKeyConditionFailed,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: transitionAPIKey.Generation,
+						Reason:             "SecretNotFound",
+						Message:            "Referenced secret not found",
+						LastTransitionTime: metav1.Now(),
+					},
+				}
+				return k8sClient.Status().Update(ctx, transitionAPIKey)
+			}, time.Second*5, time.Millisecond*100).Should(Succeed())
+
+			By("Running reconciliation after transition to Failed")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying shadow APIKeyRequest was deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, shadowKey, apiKeyRequest)
 				return apierrors.IsNotFound(err)
 			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
 		})

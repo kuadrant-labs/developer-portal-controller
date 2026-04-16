@@ -22,6 +22,7 @@ import (
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -70,6 +71,10 @@ func (r *APIKeyRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		apiKeyKey := client.ObjectKeyFromObject(apiKey)
 		currentAPIKeys[apiKeyKey] = true
 
+		// Check if APIKey is in Failed state
+		failedCondition := meta.FindStatusCondition(apiKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
+		isFailedState := failedCondition != nil && failedCondition.Status == metav1.ConditionTrue
+
 		apiProductNamespace := apiKey.Namespace
 		if apiKey.Spec.APIProductRef.Namespace != "" {
 			apiProductNamespace = apiKey.Spec.APIProductRef.Namespace
@@ -96,7 +101,8 @@ func (r *APIKeyRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			},
 		}
 
-		if apiKey.DeletionTimestamp != nil {
+		// Mark shadow resource for deletion if APIKey is being deleted or in Failed state
+		if apiKey.DeletionTimestamp != nil || isFailedState {
 			reconcilers.TagObjectToDelete(desiredRequest)
 		}
 
