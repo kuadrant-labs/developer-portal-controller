@@ -364,7 +364,7 @@ var _ = Describe("APIKeyRequest Controller", func() {
 				},
 			}
 
-			By("Creating an APIKey with Failed condition")
+			By("Creating an APIKey")
 			failedAPIKey := &devportalv1alpha1.APIKey{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "failed-apikey",
@@ -385,20 +385,42 @@ var _ = Describe("APIKeyRequest Controller", func() {
 						Email:  "test@example.com",
 					},
 				},
-				Status: devportalv1alpha1.APIKeyStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               devportalv1alpha1.APIKeyConditionFailed,
-							Status:             metav1.ConditionTrue,
-							ObservedGeneration: 1,
-							Reason:             "SecretNotFound",
-							Message:            "Referenced secret not found",
-							LastTransitionTime: metav1.Now(),
-						},
-					},
-				},
 			}
 			Expect(k8sClient.Create(ctx, failedAPIKey)).To(Succeed())
+
+			By("Setting Failed condition on the APIKey status")
+			Eventually(func(g Gomega) {
+				// Get the latest version
+				key := &devportalv1alpha1.APIKey{}
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: "failed-apikey", Namespace: consumerNamespace}, key)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				// Set the status
+				key.Status.Conditions = []metav1.Condition{
+					{
+						Type:               devportalv1alpha1.APIKeyConditionFailed,
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: key.Generation,
+						Reason:             "SecretNotFound",
+						Message:            "Referenced secret not found",
+						LastTransitionTime: metav1.Now(),
+					},
+				}
+
+				// Update status
+				err = k8sClient.Status().Update(ctx, key)
+				g.Expect(err).ToNot(HaveOccurred())
+			}, time.Second*5, time.Millisecond*250).Should(Succeed())
+
+			By("Verifying Failed condition is set")
+			Eventually(func(g Gomega) {
+				key := &devportalv1alpha1.APIKey{}
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: "failed-apikey", Namespace: consumerNamespace}, key)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(key.Status.Conditions).ToNot(BeEmpty())
+				g.Expect(key.Status.Conditions[0].Type).To(Equal(devportalv1alpha1.APIKeyConditionFailed))
+				g.Expect(key.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+			}, time.Second*5, time.Millisecond*250).Should(Succeed())
 
 			By("Running reconciliation")
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
