@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	authorinov1beta3 "github.com/kuadrant/authorino/api/v1beta3"
 	planpolicyv1alpha1 "github.com/kuadrant/kuadrant-operator/cmd/extensions/plan-policy/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,6 +45,13 @@ type APIKeySpec struct {
 	// Reference to the APIProduct this APIKey belongs to.
 	// +kubebuilder:validation:Required
 	APIProductRef APIProductReference `json:"apiProductRef"`
+
+	// SecretRef is a reference to the secret containing the API key
+	// Consumer creates this secret in their own namespace before creating APIKey
+	// The secret must contain an "api_key" entry with the value of the API key
+	// Controller reads API key from this secret on approval
+	// +kubebuilder:validation:Required
+	SecretRef corev1.LocalObjectReference `json:"secretRef"`
 
 	// PlanTier is the tier of the plan (e.g., "premium", "basic", "enterprise")
 	// +kubebuilder:validation:Required
@@ -75,11 +83,6 @@ type APIKeyStatus struct {
 	// APIHostname is the hostname from the HTTPRoute
 	// +optional
 	APIHostname string `json:"apiHostname,omitempty"`
-
-	// APIKeyValue is the projected API key value from the secret
-	// Exposes the secret value to consumer without requiring secret read permissions
-	// +optional
-	APIKeyValue string `json:"apiKeyValue,omitempty"`
 
 	// Limits contains the rate limits for the plan
 	// +optional

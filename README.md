@@ -146,6 +146,21 @@ The `APIKey` resource represents a developer's request for API access. It includ
 
 #### Example
 
+Before creating an APIKey, the consumer must create a Secret in their namespace containing the API key:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: toystore-apikey-secret
+  namespace: consumer-namespace
+type: Opaque
+stringData:
+  api_key: "your-api-key-value-here"
+```
+
+Then, create the APIKey resource:
+
 ```yaml
 apiVersion: devportal.kuadrant.io/v1alpha1
 kind: APIKey
@@ -159,6 +174,8 @@ spec:
   apiProductRef:
     name: toystore-api
     namespace: api-owner-namespace
+  secretRef:
+    name: toystore-apikey-secret
   planTier: gold
   useCase: "Authentication key for our Toystore API integration"
   requestedBy:
@@ -166,10 +183,6 @@ spec:
     email: developer@example.com
 status:
   apiHostname: api.example.com
-
-  # API key value projection (set by Developer Portal Controller)
-  # Exposes the secret value to consumer without requiring secret read permissions
-  apiKeyValue: "apk_1234567890abcdef"
 
   # Rate limits from selected plan
   limits:
@@ -211,6 +224,11 @@ status:
 - `apiProductRef` (required): Reference to the APIProduct this APIKey belongs to
   - `name`: Name of the APIProduct
   - `namespace`: Namespace of the APIProduct (enables cross-namespace references)
+- `secretRef` (required): Reference to the secret containing the API key
+  - `name`: Name of the secret in the consumer's namespace
+  - Consumer creates this secret before creating the APIKey
+  - The secret must contain an `api_key` entry with the value of the API key
+  - Controller reads the API key from this secret on approval
 - `planTier` (required): Tier of the plan (e.g., "gold", "silver", "bronze", "premium", "basic")
 - `useCase` (required): Description of how the API key will be used
 - `requestedBy` (required): Information about the requester
@@ -220,7 +238,6 @@ status:
 #### APIKey Status Fields
 
 - `apiHostname`: Hostname from the HTTPRoute
-- `apiKeyValue`: Projected API key value from the secret (exposes the secret value without requiring secret read permissions)
 - `limits`: Rate limits for the plan
 - `authScheme`: Authentication scheme from the AuthPolicy
 - `conditions`: Latest observations of the APIKey's state

@@ -88,6 +88,24 @@ spec:
                 - email
                 - userId
                 type: object
+              secretRef:
+                description: |-
+                  SecretRef is a reference to the secret containing the API key
+                  Consumer creates this secret in their own namespace before creating APIKey
+                  The secret must contain an "api_key" entry with the value of the API key
+                  Controller reads API key from this secret on approval
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               useCase:
                 description: UseCase describes how the API key will be used
                 type: string
@@ -95,6 +113,7 @@ spec:
             - apiProductRef
             - planTier
             - requestedBy
+            - secretRef
             - useCase
             type: object
           status:
@@ -102,11 +121,6 @@ spec:
             properties:
               apiHostname:
                 description: APIHostname is the hostname from the HTTPRoute
-                type: string
-              apiKeyValue:
-                description: |-
-                  APIKeyValue is the projected API key value from the secret
-                  Exposes the secret value to consumer without requiring secret read permissions
                 type: string
               authScheme:
                 description: AuthScheme displays the APIKey AuthScheme

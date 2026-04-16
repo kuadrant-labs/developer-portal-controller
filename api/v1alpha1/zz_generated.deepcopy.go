@@ -91,6 +91,7 @@ func (in *APIKeyList) DeepCopyObject() runtime.Object {
 func (in *APIKeySpec) DeepCopyInto(out *APIKeySpec) {
 	*out = *in
 	out.APIProductRef = in.APIProductRef
+	out.SecretRef = in.SecretRef
 	out.RequestedBy = in.RequestedBy
 }
 
