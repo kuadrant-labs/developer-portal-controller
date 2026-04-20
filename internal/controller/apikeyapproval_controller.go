@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/samber/lo"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -91,7 +90,7 @@ func (r *APIKeyApprovalReconciler) reconcileOwnerReference(ctx context.Context, 
 	// Get APIKeyRequests from context
 	apiKeyRequests := GetAPIKeyRequests(ctx)
 	if apiKeyRequests == nil {
-		return fmt.Errorf("apiKeyRequests not found in context")
+		apiKeyRequests = &devportalv1alpha1.APIKeyRequestList{}
 	}
 
 	// Find the referenced APIKeyRequest in the same namespace

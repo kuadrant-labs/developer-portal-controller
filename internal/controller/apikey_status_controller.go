@@ -48,8 +48,8 @@ type APIKeyStatusReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys/status,verbs=patch
+// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys,verbs=get;list;watch
+// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apiproducts,verbs=get;list;watch
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyapprovals,verbs=get;list;watch
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyrequests,verbs=get;list;watch
@@ -117,14 +117,14 @@ func (r *APIKeyStatusReconciler) reconcileStatus(ctx context.Context, apiKey *de
 		return err
 	}
 
-	equalStatus := equality.Semantic.DeepEqual(newStatus, apiKey.Status)
+	equalStatus := equality.Semantic.DeepEqual(newStatus, &apiKey.Status)
 	if equalStatus && apiKey.Generation == apiKey.Status.ObservedGeneration {
 		logger.V(1).Info("apiproduct status unchanged, skipping update")
 		return nil
 	}
 	apiKey.Status = *newStatus
 
-	updateErr := r.Client.Status().Update(ctx, apiKey)
+	updateErr := r.Status().Update(ctx, apiKey)
 	if updateErr != nil {
 		return updateErr
 	}
@@ -216,7 +216,7 @@ func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, a
 	apiProduct := &devportalv1alpha1.APIProduct{}
 	apiProductKey := apiKey.APIProductKey()
 
-	err := r.Client.Get(ctx, apiProductKey, apiProduct)
+	err := r.Get(ctx, apiProductKey, apiProduct)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return &metav1.Condition{
@@ -255,7 +255,7 @@ func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, a
 		Name:      apiKey.Spec.SecretRef.Name,
 	}
 
-	err = r.Client.Get(ctx, secretKey, secret)
+	err = r.Get(ctx, secretKey, secret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return &metav1.Condition{
@@ -343,7 +343,7 @@ func (r *APIKeyStatusReconciler) findAPIKeyApproval(ctx context.Context, apiKey 
 	// Get APIKeyApprovals from context
 	apiKeyApprovals := GetAPIKeyApprovals(ctx)
 	if apiKeyApprovals == nil {
-		return nil, fmt.Errorf("apiKeyApprovals not found in context")
+		apiKeyApprovals = &devportalv1alpha1.APIKeyApprovalList{}
 	}
 
 	// Filter out invalid APIKeyApprovals

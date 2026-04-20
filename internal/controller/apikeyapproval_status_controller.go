@@ -43,7 +43,7 @@ type APIKeyApprovalStatusReconciler struct {
 }
 
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyapprovals,verbs=get;list;watch
-// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyapprovals/status,verbs=patch
+// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyapprovals/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyrequests,verbs=get;list;watch
 
 // Reconcile handles reconciling all APIKeyApprovals in a single call. Any resource event should enqueue the
@@ -97,14 +97,14 @@ func (r *APIKeyApprovalStatusReconciler) reconcileStatus(ctx context.Context, ap
 		return err
 	}
 
-	equalStatus := equality.Semantic.DeepEqual(newStatus, approval.Status)
+	equalStatus := equality.Semantic.DeepEqual(newStatus, &approval.Status)
 	if equalStatus && approval.Generation == approval.Status.ObservedGeneration {
 		logger.V(1).Info("apikeyapproval status unchanged, skipping update")
 		return nil
 	}
 	approval.Status = *newStatus
 
-	updateErr := r.Client.Status().Update(ctx, approval)
+	updateErr := r.Status().Update(ctx, approval)
 	if updateErr != nil {
 		return updateErr
 	}
@@ -141,7 +141,7 @@ func (r *APIKeyApprovalStatusReconciler) calculateValidCondition(ctx context.Con
 	// Get APIKeyRequests from context
 	apiKeyRequests := GetAPIKeyRequests(ctx)
 	if apiKeyRequests == nil {
-		return nil, fmt.Errorf("apiKeyRequests not found in context")
+		apiKeyRequests = &devportalv1alpha1.APIKeyRequestList{}
 	}
 
 	// Find the referenced APIKeyRequest in the same namespace
