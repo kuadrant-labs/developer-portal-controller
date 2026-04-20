@@ -78,19 +78,19 @@ spec:
 
 APIKeyApproval **must** reference an existing APIKeyRequest via `apiKeyRequestRef`. The APIKeyRequest represents a developer's request for API access and contains information about the requested APIProduct, plan tier, use case, and requester details.
 
-When an APIKeyApproval is created with `approved: true`, the controller processes the approval and updates the corresponding APIKey resource to transition it from `Pending` to `Approved` phase, triggering the creation of the API key secret.
+When an APIKeyApproval is created with `approved: true`, the controller processes the approval and updates the corresponding APIKey resource conditions, setting the `Approved` condition to `True`, which triggers the registration of the API key.
 
-When an APIKeyApproval is created with `approved: false`, the controller updates the corresponding APIKey resource to transition it to `Rejected` phase, and no secret is created.
+When an APIKeyApproval is created with `approved: false`, the controller updates the corresponding APIKey resource conditions, setting the `Denied` condition to `True`, and no secret registration occurs.
 
 ### APIKey
 
-The APIKeyRequest references an APIKey resource, which is the shadow resource that manages the lifecycle of API access credentials. The APIKeyApproval indirectly affects the APIKey by approving or denying the request that the APIKey is based on.
+The APIKeyRequest references an APIKey resource, which is the shadow resource that manages the lifecycle of API access credentials. The APIKeyApproval indirectly affects the APIKey by approving or denying the request that the APIKey is based on, reflected through the APIKey's status conditions.
 
 ## Approval Workflow
 
 1. Developer creates an **APIKey** resource requesting access to an APIProduct
 2. Controller creates a corresponding **APIKeyRequest** shadow resource
 3. If the APIProduct has `approvalMode: manual`, an administrator creates an **APIKeyApproval** resource
-4. The controller processes the approval decision and updates the APIKey status accordingly
-5. If approved, a Kubernetes Secret containing the API key is created
-6. If denied, the APIKey remains in `Rejected` phase without a secret
+4. The controller processes the approval decision and updates the APIKey status conditions accordingly
+5. If approved (condition `Approved: True`), the API key from the developer's secret is registered for use
+6. If denied (condition `Denied: True`), the APIKey is marked as denied and the key is not registered
