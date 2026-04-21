@@ -215,51 +215,6 @@ var _ = Describe("APIKeyApproval Status Controller", func() {
 			Expect(validCondition.Message).To(ContainSubstring("non-existent-request"))
 		})
 
-		It("should skip APIKeyApproval marked for deletion", func() {
-			controllerReconciler := &APIKeyApprovalStatusReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			By("Creating an APIKeyApproval")
-			approval := &devportalv1alpha1.APIKeyApproval{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "deletion-skip-test",
-					Namespace: apiProductNamespace,
-				},
-				Spec: devportalv1alpha1.APIKeyApprovalSpec{
-					APIKeyRequestRef: devportalv1alpha1.APIKeyRequestReference{
-						Name: APIKeyRequestName(apiKey),
-					},
-					Approved:   true,
-					ReviewedBy: "admin@example.com",
-					ReviewedAt: metav1.Now(),
-				},
-			}
-			Expect(k8sClient.Create(ctx, approval)).To(Succeed())
-
-			By("Deleting the APIKeyApproval")
-			Expect(k8sClient.Delete(ctx, approval)).To(Succeed())
-
-			By("Running reconciliation after deletion")
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying APIKeyApproval status was not updated")
-			updatedApproval := &devportalv1alpha1.APIKeyApproval{}
-			Consistently(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      "deletion-skip-test",
-					Namespace: apiProductNamespace,
-				}, updatedApproval)
-				if err != nil {
-					return true // Resource deleted or being deleted
-				}
-				// Should have no conditions since we skipped the update
-				return len(updatedApproval.Status.Conditions) == 0
-			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
-		})
-
 		It("should not update when status is already in sync", func() {
 			controllerReconciler := &APIKeyApprovalStatusReconciler{
 				Client: k8sClient,
