@@ -254,6 +254,7 @@ status:
 The `APIKeyRequest` resource is a **shadow resource** automatically created by the Developer Portal Controller in the API owner's namespace whenever a consumer creates an `APIKey`. This design enables namespace-based RBAC: API owners can list and review access requests for their API products without requiring cluster-wide permissions to view all APIKeys across all consumer namespaces.
 
 **Key characteristics:**
+
 - Created automatically by the controller (not by users)
 - Lives in the API owner's namespace
 - Contains request metadata (use case, requester info, plan tier)
@@ -328,6 +329,7 @@ status:
 The `APIKeyApproval` resource represents an API owner's decision to approve or deny an `APIKeyRequest`. API owners create this resource in their own namespace to review and make decisions on API access requests for their API products.
 
 **Key characteristics:**
+
 - Created by API owners (manual approval mode) or automatically (automatic mode)
 - Lives in the API owner's namespace (same as the APIProduct)
 - Contains approval decision and reviewer metadata
@@ -392,6 +394,52 @@ spec:
 - `reviewedAt` (required): Timestamp when the request was reviewed (RFC3339 format)
 - `reason` (optional): Short reason for the decision (e.g., "Approved", "Denied", "InvalidUseCase")
 - `message` (optional): Additional context or explanation for the approval or denial decision
+
+---
+
+## Entity Relationship Model
+
+The following diagram illustrates the relationships between resources across namespace boundaries:
+
+```mermaid
+graph TB
+    subgraph ConsumerNamespace["Consumer Namespace"]
+        APIKey["APIKey"]
+    end
+
+    subgraph OwnerNamespace["API Owner Namespace"]
+        APIProduct["APIProduct"]
+        APIKeyRequest["APIKeyRequest<br/>(Shadow Resource)"]
+        APIKeyApproval["APIKeyApproval"]
+    end
+
+    %% Cross-namespace references
+    APIKey -->|"spec.apiProductRef<br/>(cross-namespace)"| APIProduct
+    APIKeyRequest -->|"spec.apiKeyRef<br/>(cross-namespace)"| APIKey
+
+    %% Same-namespace references
+    APIKeyRequest -->|"spec.apiProductRef<br/>(local)"| APIProduct
+    APIKeyApproval -->|"spec.apiKeyRequestRef<br/>(local)"| APIKeyRequest
+
+    %% Controller actions
+    APIKey -.->|"Controller creates"| APIKeyRequest
+
+    classDef consumerNS fill:#e1f5ff,stroke:#0077cc,stroke-width:2px
+    classDef ownerNS fill:#fff4e6,stroke:#ff9800,stroke-width:2px
+    classDef shadowResource fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+
+    class APIKey consumerNS
+    class APIProduct,APIKeyApproval ownerNS
+    class APIKeyRequest shadowResource
+```
+
+**Key Concepts:**
+
+- **Namespace Isolation**: Consumer resources (APIKey) are isolated in the consumer's namespace; owner resources (APIProduct, APIKeyRequest, APIKeyApproval) are in the owner's namespace
+- **Cross-Namespace References** (solid arrows): Enable consumers to request access to APIs owned by others
+- **Local References** (solid arrows): Keep owner-side resources scoped within the owner's namespace
+- **Controller Actions** (dashed arrows): Automated creation and updates by the Developer Portal Controller
+- **Shadow Resource Pattern**: APIKeyRequest mirrors APIKey metadata in the owner's namespace without exposing sensitive data
 
 ---
 

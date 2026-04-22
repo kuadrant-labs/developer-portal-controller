@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,8 +47,11 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 	})
 
 	AfterEach(func(ctx SpecContext) {
-		deleteNamespaceWithContext(ctx, &apiProductNamespace)
-		deleteNamespaceWithContext(ctx, &consumerNamespace)
+		deleteAPIKeysWithContext(ctx, consumerNamespace)
+		deleteAPIKeyRequestsWithContext(ctx, apiProductNamespace)
+		deleteAPIKeyApprovalsWithContext(ctx, apiProductNamespace)
+		deleteNamespaceWithContext(ctx, apiProductNamespace)
+		deleteNamespaceWithContext(ctx, consumerNamespace)
 	}, nodeTimeOut)
 
 	Context("When reconciling APIKey resources", func() {
@@ -89,7 +91,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				},
 				Spec: devportalv1alpha1.APIKeyRequestSpec{
@@ -109,12 +111,6 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, apiKeyRequest)).To(Succeed())
-		})
-
-		AfterEach(func(ctx SpecContext) {
-			By("Cleaning up APIKeys and APIKeyRequests")
-			deleteAPIKeysWithContext(ctx, consumerNamespace)
-			deleteAPIKeyRequestsWithContext(ctx, consumerNamespace)
 		})
 
 		It("should sync conditions from APIKey to APIKeyRequest", func() {
@@ -151,7 +147,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
@@ -201,7 +197,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
@@ -231,10 +227,10 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			}, updatedAPIKey)).To(Succeed())
 
 			meta.SetStatusCondition(&updatedAPIKey.Status.Conditions, metav1.Condition{
-				Type:               "Ready",
-				Status:             metav1.ConditionFalse,
-				Reason:             "Pending",
-				Message:            "Waiting for approval",
+				Type:               devportalv1alpha1.APIKeyConditionApproved,
+				Status:             metav1.ConditionTrue,
+				Reason:             "Approved",
+				Message:            "API key request approved by Bob",
 				ObservedGeneration: updatedAPIKey.Generation,
 			})
 			Expect(k8sClient.Status().Update(ctx, updatedAPIKey)).To(Succeed())
@@ -247,14 +243,14 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
 					return false
 				}
-				readyCondition := meta.FindStatusCondition(apiKeyRequest.Status.Conditions, "Ready")
-				return readyCondition != nil && readyCondition.Status == metav1.ConditionFalse
+				approvedCondition := meta.FindStatusCondition(apiKeyRequest.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+				return approvedCondition != nil && approvedCondition.Status == metav1.ConditionTrue
 			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
 
 			By("Updating condition on APIKey")
@@ -264,10 +260,10 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			}, updatedAPIKey)).To(Succeed())
 
 			meta.SetStatusCondition(&updatedAPIKey.Status.Conditions, metav1.Condition{
-				Type:               "Ready",
+				Type:               devportalv1alpha1.APIKeyConditionDenied,
 				Status:             metav1.ConditionTrue,
-				Reason:             "Approved",
-				Message:            "API key has been approved",
+				Reason:             "Denied",
+				Message:            "Missing card information",
 				ObservedGeneration: updatedAPIKey.Generation,
 			})
 			Expect(k8sClient.Status().Update(ctx, updatedAPIKey)).To(Succeed())
@@ -279,16 +275,17 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			By("Verifying condition status was updated")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
 					return false
 				}
-				readyCondition := meta.FindStatusCondition(apiKeyRequest.Status.Conditions, "Ready")
-				return readyCondition != nil &&
-					readyCondition.Status == metav1.ConditionTrue &&
-					readyCondition.Reason == "Approved"
+				deniedCondition := meta.FindStatusCondition(apiKeyRequest.Status.Conditions, devportalv1alpha1.APIKeyConditionDenied)
+				return deniedCondition != nil &&
+					deniedCondition.Type == devportalv1alpha1.APIKeyConditionDenied &&
+					deniedCondition.Status == metav1.ConditionTrue &&
+					deniedCondition.Reason == "Denied"
 			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
 		})
 
@@ -322,7 +319,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			By("Creating corresponding APIKeyRequest")
 			deletionAPIKeyRequest := &devportalv1alpha1.APIKeyRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, "deletion-status-test"),
+					Name:      APIKeyRequestName(deletionAPIKey),
 					Namespace: apiProductNamespace,
 				},
 				Spec: devportalv1alpha1.APIKeyRequestSpec{
@@ -369,7 +366,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Consistently(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, "deletion-status-test"),
+					Name:      APIKeyRequestName(deletionAPIKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 				if err != nil {
@@ -410,7 +407,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 			apiKeyRequest := &devportalv1alpha1.APIKeyRequest{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+					Name:      APIKeyRequestName(apiKey),
 					Namespace: apiProductNamespace,
 				}, apiKeyRequest)
 			}, time.Second*10, time.Millisecond*250).Should(Succeed())
@@ -423,7 +420,7 @@ var _ = Describe("APIKeyRequest Status Controller", func() {
 
 			By("Verifying APIKeyRequest was not updated")
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name:      fmt.Sprintf("%s-%s", consumerNamespace, apiKeyName),
+				Name:      APIKeyRequestName(apiKey),
 				Namespace: apiProductNamespace,
 			}, apiKeyRequest)).To(Succeed())
 			// Resource version should be the same if no update occurred

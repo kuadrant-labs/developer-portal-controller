@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,7 +83,7 @@ func (r *APIKeyRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		desiredRequest := &devportalv1alpha1.APIKeyRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				// one to one mapping ensures no name conflict
-				Name:      fmt.Sprintf("%s-%s", apiKey.Namespace, apiKey.Name),
+				Name:      APIKeyRequestName(apiKey),
 				Namespace: apiProductNamespace,
 			},
 			Spec: devportalv1alpha1.APIKeyRequestSpec{

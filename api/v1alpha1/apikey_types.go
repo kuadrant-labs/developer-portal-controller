@@ -21,6 +21,7 @@ import (
 	planpolicyv1alpha1 "github.com/kuadrant/kuadrant-operator/cmd/extensions/plan-policy/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // APIKey condition types
@@ -80,6 +81,10 @@ type RequestedBy struct {
 
 // APIKeyStatus defines the observed state of APIKey.
 type APIKeyStatus struct {
+	// ObservedGeneration reflects the generation of the most recently observed spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// APIHostname is the hostname from the HTTPRoute
 	// +optional
 	APIHostname string `json:"apiHostname,omitempty"`
@@ -119,6 +124,21 @@ type APIKey struct {
 
 	Spec   APIKeySpec   `json:"spec,omitempty"`
 	Status APIKeyStatus `json:"status,omitempty"`
+}
+
+func (a *APIKey) APIProductKey() client.ObjectKey {
+	if a == nil {
+		return client.ObjectKey{}
+	}
+
+	apiProductNamespace := a.Namespace
+	if a.Spec.APIProductRef.Namespace != "" {
+		apiProductNamespace = a.Spec.APIProductRef.Namespace
+	}
+	return client.ObjectKey{
+		Name:      a.Spec.APIProductRef.Name,
+		Namespace: apiProductNamespace,
+	}
 }
 
 // +kubebuilder:object:root=true

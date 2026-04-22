@@ -133,7 +133,7 @@ func (r *APIProductReconciler) reconcileStatus(ctx context.Context, apiProductOb
 		return err
 	}
 
-	equalStatus := equality.Semantic.DeepEqual(newStatus, apiProductObj.Status)
+	equalStatus := equality.Semantic.DeepEqual(newStatus, &apiProductObj.Status)
 	if equalStatus && apiProductObj.Generation == apiProductObj.Status.ObservedGeneration {
 		logger.V(1).Info("apiproduct status unchanged, skipping update")
 		return nil

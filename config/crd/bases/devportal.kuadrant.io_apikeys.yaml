@@ -310,6 +310,11 @@ spec:
                     description: Yearly limit of requests for this plan.
                     type: integer
                 type: object
+              observedGeneration:
+                description: ObservedGeneration reflects the generation of the most
+                  recently observed spec.
+                format: int64
+                type: integer
             type: object
         type: object
     served: true
