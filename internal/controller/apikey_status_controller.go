@@ -55,6 +55,7 @@ type APIKeyStatusReconciler struct {
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=kuadrant.io,resources=kuadrants,verbs=get;list;watch
 
 // Reconcile handles reconciling all resources in a single call. Any resource event should enqueue the
 // same reconcile.Request containing this controller name, i.e. "apikey-status". This allows multiple resource updates to
@@ -206,6 +207,17 @@ func (r *APIKeyStatusReconciler) calculateStatusConditions(ctx context.Context, 
 }
 
 func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, apiKey *devportalv1alpha1.APIKey) (*metav1.Condition, error) {
+	// Check if Kuadrant CR exists
+	if _, found := GetKuadrantNamespace(ctx, r.Client); !found {
+		return &metav1.Condition{
+			Type:               devportalv1alpha1.APIKeyConditionFailed,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: apiKey.Generation,
+			Reason:             "KuadrantNotFound",
+			Message:            "Kuadrant CR not found in cluster",
+		}, nil
+	}
+
 	// Check if the referenced APIProduct exists
 	apiProduct := &devportalv1alpha1.APIProduct{}
 	apiProductKey := apiKey.APIProductKey()

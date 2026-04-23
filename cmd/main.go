@@ -45,6 +45,7 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	kuadrantapiv1 "github.com/kuadrant/kuadrant-operator/api/v1"
+	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
 	planpolicyv1alpha1 "github.com/kuadrant/kuadrant-operator/cmd/extensions/plan-policy/api/v1alpha1"
 
 	devportalv1alpha1 "github.com/kuadrant/developer-portal-controller/api/v1alpha1"
@@ -67,6 +68,8 @@ func init() {
 	utilruntime.Must(devportalv1alpha1.AddToScheme(scheme))
 
 	utilruntime.Must(kuadrantapiv1.AddToScheme(scheme))
+
+	utilruntime.Must(kuadrantv1beta1.AddToScheme(scheme))
 
 	utilruntime.Must(planpolicyv1alpha1.AddToScheme(scheme))
 
@@ -310,9 +313,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.APIKeySecretReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+		BaseReconciler: reconcilers.BaseReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "APIKeySecret")
 		os.Exit(1)
 	}

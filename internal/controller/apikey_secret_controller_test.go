@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -31,11 +32,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	devportalv1alpha1 "github.com/kuadrant/developer-portal-controller/api/v1alpha1"
+	"github.com/kuadrant/developer-portal-controller/internal/reconcilers"
 )
 
 var _ = Describe("APIKeySecret Controller", func() {
 	const (
-		nodeTimeOut = NodeTimeout(time.Second * 30)
+		nodeTimeOut       = NodeTimeout(time.Second * 30)
+		kuadrantNamespace = "kuadrant" // Test kuadrant namespace
 	)
 	var (
 		consumerNamespace string
@@ -56,6 +59,19 @@ var _ = Describe("APIKeySecret Controller", func() {
 		err := k8sClient.Create(ctx, kuadrantNS)
 		if err != nil && !apierrors.IsAlreadyExists(err) {
 			Fail("Failed to create kuadrant namespace")
+		}
+
+		// Create Kuadrant CR in kuadrant namespace
+		kuadrant := &kuadrantv1beta1.Kuadrant{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kuadrant",
+				Namespace: kuadrantNamespace,
+			},
+			Spec: kuadrantv1beta1.KuadrantSpec{},
+		}
+		err = k8sClient.Create(ctx, kuadrant)
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			Fail("Failed to create Kuadrant CR")
 		}
 	})
 
@@ -141,8 +157,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 		It("should create enforcement secret in kuadrant namespace", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running reconciliation")
@@ -172,8 +190,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 		It("should not duplicate enforcement secret if it already exists", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running first reconciliation")
@@ -251,8 +271,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 		It("should delete enforcement secret when denied", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("First approving the APIKey to create enforcement secret")
@@ -354,32 +376,17 @@ var _ = Describe("APIKeySecret Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, apiKey)).To(Succeed())
 		})
 
-		It("should set Failed condition when consumer secret not found", func() {
+		It("should skip enforcement secret creation when consumer secret not found", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running reconciliation")
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
 			Expect(err).NotTo(HaveOccurred())
-
-			By("Verifying Failed condition is set")
-			latestAPIKey := &devportalv1alpha1.APIKey{}
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)
-				if err != nil {
-					return false
-				}
-				failedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
-				return failedCondition != nil && failedCondition.Status == metav1.ConditionTrue
-			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
-
-			By("Verifying Failed condition has correct reason")
-			latestAPIKey = &devportalv1alpha1.APIKey{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
-			failedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
-			Expect(failedCondition.Reason).To(Equal("SecretNotFound"))
 
 			By("Verifying enforcement secret was not created")
 			enforcementSecret := &corev1.Secret{}
@@ -391,6 +398,15 @@ var _ = Describe("APIKeySecret Controller", func() {
 				err := k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
 				return apierrors.IsNotFound(err)
 			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
+
+			By("Verifying APIKey status was not modified by secret controller")
+			// Note: The apikey_status_controller is responsible for setting Failed condition
+			latestAPIKey := &devportalv1alpha1.APIKey{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
+			// Status should still be Approved (not modified by secret controller)
+			approvedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+			Expect(approvedCondition).NotTo(BeNil())
+			Expect(approvedCondition.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
 
@@ -453,28 +469,37 @@ var _ = Describe("APIKeySecret Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, apiKey)).To(Succeed())
 		})
 
-		It("should set Failed condition when api_key entry is missing", func() {
+		It("should skip enforcement secret creation when api_key entry is missing", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running reconciliation")
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying Failed condition is set with correct reason")
+			By("Verifying enforcement secret was not created")
+			enforcementSecret := &corev1.Secret{}
+			enforcementSecretKey := types.NamespacedName{
+				Name:      enforcementSecretName(apiKey),
+				Namespace: kuadrantNamespace,
+			}
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
+				return apierrors.IsNotFound(err)
+			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
+
+			By("Verifying APIKey status was not modified by secret controller")
+			// Note: The apikey_status_controller is responsible for setting Failed condition
 			latestAPIKey := &devportalv1alpha1.APIKey{}
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)
-				if err != nil {
-					return false
-				}
-				failedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
-				return failedCondition != nil &&
-					failedCondition.Status == metav1.ConditionTrue &&
-					failedCondition.Reason == "SecretAPIKeyNotFound"
-			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
+			// Status should still be Approved (not modified by secret controller)
+			approvedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+			Expect(approvedCondition).NotTo(BeNil())
+			Expect(approvedCondition.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
 
@@ -527,8 +552,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 		It("should not create enforcement secret", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running reconciliation")
@@ -672,8 +699,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 		It("should create separate enforcement secrets for APIKeys with same name in different namespaces", func() {
 			controllerReconciler := &APIKeySecretReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
 			}
 
 			By("Running reconciliation")
