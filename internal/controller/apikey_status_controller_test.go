@@ -20,9 +20,6 @@ import (
 	"context"
 	"time"
 
-	authorinov1beta3 "github.com/kuadrant/authorino/api/v1beta3"
-	kuadrantapiv1 "github.com/kuadrant/kuadrant-operator/api/v1"
-	planpolicyv1alpha1 "github.com/kuadrant/kuadrant-operator/cmd/extensions/plan-policy/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +32,11 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayapiv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
+	authorinov1beta3 "github.com/kuadrant/authorino/api/v1beta3"
+	kuadrantapiv1 "github.com/kuadrant/kuadrant-operator/api/v1"
+	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
+	planpolicyv1alpha1 "github.com/kuadrant/kuadrant-operator/cmd/extensions/plan-policy/api/v1alpha1"
+
 	devportalv1alpha1 "github.com/kuadrant/developer-portal-controller/api/v1alpha1"
 )
 
@@ -46,6 +48,7 @@ var _ = Describe("APIKey Status Controller", func() {
 		apiProductNamespace string
 		consumerNamespace   string
 		secondConsumerNs    string
+		kuadrantNamespace   string
 		apiKeyName          = "test-apikey"
 		apiProductName      = "test-api-product"
 		httpRouteName       = "test-route"
@@ -53,6 +56,17 @@ var _ = Describe("APIKey Status Controller", func() {
 	)
 
 	BeforeEach(func(ctx SpecContext) {
+		createNamespaceWithContext(ctx, &kuadrantNamespace)
+		// Create Kuadrant CR in kuadrant namespace
+		kuadrant := &kuadrantv1beta1.Kuadrant{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kuadrant",
+				Namespace: kuadrantNamespace,
+			},
+			Spec: kuadrantv1beta1.KuadrantSpec{},
+		}
+		Expect(k8sClient.Create(ctx, kuadrant)).To(Succeed())
+
 		createNamespaceWithContext(ctx, &apiProductNamespace)
 		createNamespaceWithContext(ctx, &consumerNamespace)
 		createNamespaceWithContext(ctx, &secondConsumerNs)
@@ -63,9 +77,11 @@ var _ = Describe("APIKey Status Controller", func() {
 		deleteAPIKeysWithContext(ctx, secondConsumerNs)
 		deleteAPIKeyRequestsWithContext(ctx, apiProductNamespace)
 		deleteAPIKeyApprovalsWithContext(ctx, apiProductNamespace)
+		deleteKuadrantsWithContext(ctx, kuadrantNamespace)
 		deleteNamespaceWithContext(ctx, apiProductNamespace)
 		deleteNamespaceWithContext(ctx, consumerNamespace)
 		deleteNamespaceWithContext(ctx, secondConsumerNs)
+		deleteNamespaceWithContext(ctx, kuadrantNamespace)
 	}, nodeTimeOut)
 
 	Context("When reconciling APIKey status", func() {
@@ -234,19 +250,17 @@ var _ = Describe("APIKey Status Controller", func() {
 
 			By("Verifying Failed condition is set")
 			updatedAPIKey := &devportalv1alpha1.APIKey{}
-			Eventually(func() bool {
+			Eventually(func(g Gomega) {
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "orphan-apikey",
 					Namespace: consumerNamespace,
 				}, updatedAPIKey)
-				if err != nil {
-					return false
-				}
+				g.Expect(err).NotTo(HaveOccurred())
 				failedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
-				return failedCondition != nil &&
-					failedCondition.Status == metav1.ConditionTrue &&
-					failedCondition.Reason == "APIProductNotFound"
-			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+				g.Expect(failedCondition).NotTo(BeNil())
+				g.Expect(failedCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(failedCondition.Reason).To(Equal("APIProductNotFound"))
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
 		})
 
 		It("should set Failed condition when Secret does not exist", func() {
@@ -285,19 +299,18 @@ var _ = Describe("APIKey Status Controller", func() {
 
 			By("Verifying Failed condition is set with SecretNotFound reason")
 			updatedAPIKey := &devportalv1alpha1.APIKey{}
-			Eventually(func() bool {
+			Eventually(func(g Gomega) {
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "apikey-missing-secret",
 					Namespace: consumerNamespace,
 				}, updatedAPIKey)
-				if err != nil {
-					return false
-				}
+				g.Expect(err).NotTo(HaveOccurred())
 				failedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
-				return failedCondition != nil &&
-					failedCondition.Status == metav1.ConditionTrue &&
-					failedCondition.Reason == "SecretNotFound"
-			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+
+				g.Expect(failedCondition).NotTo(BeNil())
+				g.Expect(failedCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(failedCondition.Reason).To(Equal("SecretNotFound"))
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
 		})
 
 		It("should set Failed condition when Secret does not have api_key entry", func() {

@@ -36,6 +36,10 @@ import (
 )
 
 const (
+	apiKeySecretAnnotationPlan      = "secret.kuadrant.io/plan-id"
+	apiKeySecretAnnotationUser      = "secret.kuadrant.io/user-id"
+	apiKeySecretLabelAuthorinoValue = "authorino"
+	apiKeySecretKey                 = "api_key"
 	// Enforcement secret labels
 	enforcementSecretLabelAPIProduct          = "devportal.kuadrant.io/apiproduct"
 	enforcementSecretLabelAPIProductNamespace = "devportal.kuadrant.io/apiproduct-namespace"
@@ -50,7 +54,7 @@ type APIKeySecretReconciler struct {
 }
 
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys,verbs=get;list;watch
-// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeys/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apiproducts,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=kuadrant.io,resources=kuadrants,verbs=get;list;watch
 
@@ -152,20 +156,29 @@ func (r *APIKeySecretReconciler) desiredEnforcementSecret(ctx context.Context, a
 		return nil, nil
 	}
 
+	secretLabels := map[string]string{
+		enforcementSecretLabelAPIProduct:          apiKey.Spec.APIProductRef.Name,
+		enforcementSecretLabelAPIProductNamespace: apiKey.Spec.APIProductRef.Namespace,
+		enforcementSecretLabelAPIKey:              apiKey.Name,
+		enforcementSecretLabelAPIKeyNamespace:     apiKey.Namespace,
+		enforcementSecretLabelAuthorinoManagedBy:  apiKeySecretLabelAuthorinoValue,
+	}
+
+	if apiKey.Status.AuthScheme != nil {
+		secretLabels = lo.Assign(apiKey.Status.AuthScheme.AuthenticationSpec.Selector.MatchLabels,
+			secretLabels)
+	}
+
 	// Create enforcement secret in kuadrant namespace
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      enforcementSecretName(apiKey),
 			Namespace: kuadrantNamespace,
-			Labels: map[string]string{
-				enforcementSecretLabelAPIProduct:          apiKey.Spec.APIProductRef.Name,
-				enforcementSecretLabelAPIProductNamespace: apiKey.Spec.APIProductRef.Namespace,
-				enforcementSecretLabelAPIKey:              apiKey.Name,
-				enforcementSecretLabelAPIKeyNamespace:     apiKey.Namespace,
-				enforcementSecretLabelAuthorinoManagedBy:  apiKeySecretLabelAuthorinoValue,
+			Annotations: map[string]string{
+				apiKeySecretAnnotationPlan: apiKey.Spec.PlanTier,
+				apiKeySecretAnnotationUser: apiKey.Spec.RequestedBy.UserID,
 			},
-			// Note: Cannot use ownerReferences for cross-namespace resources
-			// Controller must handle cleanup explicitly when APIKey is deleted
+			Labels: secretLabels,
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{

@@ -20,7 +20,6 @@ import (
 	"context"
 	"time"
 
-	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -28,8 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
 
 	devportalv1alpha1 "github.com/kuadrant/developer-portal-controller/api/v1alpha1"
 	"github.com/kuadrant/developer-portal-controller/internal/reconcilers"
@@ -37,11 +37,11 @@ import (
 
 var _ = Describe("APIKeySecret Controller", func() {
 	const (
-		nodeTimeOut       = NodeTimeout(time.Second * 30)
-		kuadrantNamespace = "kuadrant" // Test kuadrant namespace
+		nodeTimeOut = NodeTimeout(time.Second * 30)
 	)
 	var (
 		consumerNamespace string
+		kuadrantNamespace string
 		apiKeyName        = "test-apikey"
 		apiProductName    = "test-api-product"
 		secretName        = "test-secret"
@@ -49,17 +49,7 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 	BeforeEach(func(ctx SpecContext) {
 		createNamespaceWithContext(ctx, &consumerNamespace)
-
-		// Create kuadrant namespace if it doesn't exist
-		kuadrantNS := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: kuadrantNamespace,
-			},
-		}
-		err := k8sClient.Create(ctx, kuadrantNS)
-		if err != nil && !apierrors.IsAlreadyExists(err) {
-			Fail("Failed to create kuadrant namespace")
-		}
+		createNamespaceWithContext(ctx, &kuadrantNamespace)
 
 		// Create Kuadrant CR in kuadrant namespace
 		kuadrant := &kuadrantv1beta1.Kuadrant{
@@ -69,30 +59,14 @@ var _ = Describe("APIKeySecret Controller", func() {
 			},
 			Spec: kuadrantv1beta1.KuadrantSpec{},
 		}
-		err = k8sClient.Create(ctx, kuadrant)
-		if err != nil && !apierrors.IsAlreadyExists(err) {
-			Fail("Failed to create Kuadrant CR")
-		}
+		Expect(k8sClient.Create(ctx, kuadrant)).To(Succeed())
 	})
 
 	AfterEach(func(ctx SpecContext) {
 		deleteAPIKeysWithContext(ctx, consumerNamespace)
+		deleteKuadrantsWithContext(ctx, kuadrantNamespace)
 		deleteNamespaceWithContext(ctx, consumerNamespace)
-
-		// Cleanup enforcement secrets
-		secretList := &corev1.SecretList{}
-		err := k8sClient.List(ctx, secretList, []client.ListOption{
-			client.InNamespace(kuadrantNamespace),
-		}...)
-		if err == nil {
-			for i := range secretList.Items {
-				if secretList.Items[i].Labels != nil {
-					if _, ok := secretList.Items[i].Labels[enforcementSecretLabelAPIKey]; ok {
-						k8sClient.Delete(ctx, &secretList.Items[i])
-					}
-				}
-			}
-		}
+		deleteNamespaceWithContext(ctx, kuadrantNamespace)
 	}, nodeTimeOut)
 
 	Context("When an APIKey is approved", func() {
