@@ -1,8 +1,13 @@
 demo-install:
 	@echo "installing demo resources..."
+	@# Create Kuadrant CR
+	@kubectl apply -f utils/demo/kuadrant.yaml
+	@# Install gamestore demo resources
 	@kubectl apply -f utils/demo/gamestore.yaml
 	@echo ""
 	@echo "patching resource statuses (simulating Istio/Kuadrant controllers)..."
+	@# Patch Kuadrant status
+	@kubectl patch kuadrant kuadrant -n kuadrant-system --type=merge --subresource=status --patch='{"status":{"conditions":[{"type":"Ready","status":"True","reason":"InstallationSuccessful","message":"Kuadrant is ready","lastTransitionTime":"'$$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}],"observedGeneration":1}}'
 	@# Patch Gateway status
 	@kubectl patch gateway gamestore -n gamestore --type=merge --subresource=status --patch='{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"Gateway accepted","lastTransitionTime":"'$$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"},{"type":"Programmed","status":"True","reason":"Programmed","message":"Gateway programmed","lastTransitionTime":"'$$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}],"addresses":[{"type":"IPAddress","value":"172.31.200.0"}]}}'
 	@# Patch HTTPRoute status
