@@ -482,20 +482,53 @@ If the APIProduct has `approvalMode: automatic`, the controller automatically cr
 
 ---
 
-## Development environment setup
+## Development Environment Setup
 
-Dev env
+The `make local-setup` command sets up a complete local development environment using Kind (Kubernetes in Docker). This is useful for local development when you don't have Istio or Kuadrant controllers installed.
+
+### What `make local-setup` Does
+
+Running `make local-setup` performs the following steps:
+
+1. **Creates a Kind cluster**
+   - Deletes any existing `devportal-controller-local` Kind cluster
+   - Creates a fresh Kind cluster with the name `devportal-controller-local`
+   - Uses configuration from `utils/kind-cluster.yaml`
+
+2. **Installs API dependencies (CRDs)**
+   - Installs Developer Portal Controller CRDs (APIProduct, APIKey, APIKeyRequest, APIKeyApproval)
+   - Installs Gateway API CRDs (HTTPRoute, Gateway, etc.)
+   - Installs Kuadrant core CRDs (PlanPolicy, AuthPolicy)
+
+3. **Installs demo resources**
+   - Applies demo manifests from `utils/demo/gamestore.yaml`
+   - Provides sample resources for testing and development
+
+4. **Builds and deploys the controller**
+   - Builds the controller Docker image from current code
+   - Loads the image into the Kind cluster
+   - Deploys the controller to the `developer-portal-controller-system` namespace
+   - Waits for the deployment to become available
+
+### Usage
 
 ```bash
-make kind-create-cluster
-make install
-make gateway-api-install
-make kuadrant-core-install
+# Set up the complete local development environment
+make local-setup
 ```
 
-Deploy controller
+### Individual Setup Steps
+
+You can also run individual steps separately:
 
 ```bash
+# Create only the Kind cluster with CRDs
+make local-cluster-setup
+
+# Add demo resources to an existing cluster
+make demo-install
+
+# Deploy controller from current code to an existing cluster
 make local-deploy
 ```
 

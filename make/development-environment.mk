@@ -1,5 +1,5 @@
-.PHONY: local-setup
-local-setup:
+.PHONY: local-cluster-setup
+local-cluster-setup:
 	@echo ""
 	@echo "deleting kind cluster..."
 	@$(MAKE) kind-delete-cluster
@@ -16,8 +16,15 @@ local-setup:
 	@echo "installing kuadrant core APIs..."
 	@$(MAKE) kuadrant-core-install
 	@echo ""
-	@echo "installing demo resources..."
+	@echo "cluster ready! Kuadrant and Gateway API APIs installed."
+	@echo ""
+
+.PHONY: local-env-setup
+local-env-setup:
+	@$(MAKE) local-cluster-setup
 	@$(MAKE) demo-install
-	@echo ""
-	@echo "cluster ready! kuadrant and demo resources installed."
-	@echo ""
+
+.PHONY: local-setup
+local-setup:
+	@$(MAKE) local-env-setup
+	@$(MAKE) local-deploy
