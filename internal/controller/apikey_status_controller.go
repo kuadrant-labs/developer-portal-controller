@@ -208,7 +208,12 @@ func (r *APIKeyStatusReconciler) calculateStatusConditions(ctx context.Context, 
 
 func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, apiKey *devportalv1alpha1.APIKey) (*metav1.Condition, error) {
 	// Check if Kuadrant CR exists
-	if _, found := GetKuadrantNamespace(ctx, r.Client); !found {
+	kNs, err := GetKuadrantNamespace(ctx, r.Client)
+	if err != nil {
+		return nil, err
+	}
+
+	if kNs == "" {
 		return &metav1.Condition{
 			Type:               devportalv1alpha1.APIKeyConditionFailed,
 			Status:             metav1.ConditionTrue,
@@ -222,7 +227,7 @@ func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, a
 	apiProduct := &devportalv1alpha1.APIProduct{}
 	apiProductKey := apiKey.APIProductKey()
 
-	err := r.Get(ctx, apiProductKey, apiProduct)
+	err = r.Get(ctx, apiProductKey, apiProduct)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return &metav1.Condition{

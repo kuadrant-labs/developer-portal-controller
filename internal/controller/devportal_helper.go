@@ -64,18 +64,18 @@ func APIKeyRequestName(apiKey *devportalv1alpha1.APIKey) string {
 
 // GetKuadrantNamespace finds the namespace where the Kuadrant CR exists
 // Returns the namespace name and true if found, empty string and false otherwise
-func GetKuadrantNamespace(ctx context.Context, k8sClient client.Client) (string, bool) {
+func GetKuadrantNamespace(ctx context.Context, k8sClient client.Client) (string, error) {
 	logger := logf.FromContext(ctx)
 	kuadrantList := &kuadrantv1beta1.KuadrantList{}
 	if err := k8sClient.List(ctx, kuadrantList); err != nil {
 		logger.Error(err, "cannot list kuadrant resources")
-		return "", false
+		return "", err
 	}
 
 	if len(kuadrantList.Items) == 0 {
-		return "", false
+		return "", nil
 	}
 
 	// Return the namespace of the first Kuadrant CR found
-	return kuadrantList.Items[0].Namespace, true
+	return kuadrantList.Items[0].Namespace, nil
 }

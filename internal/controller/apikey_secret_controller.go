@@ -68,8 +68,12 @@ func (r *APIKeySecretReconciler) Reconcile(ctx context.Context, _ ctrl.Request) 
 
 	// Get Kuadrant namespace - if not found, skip processing
 	// The status controller will set Failed condition if Kuadrant CR doesn't exist
-	kuadrantNamespace, found := GetKuadrantNamespace(ctx, r.Client)
-	if !found {
+	kuadrantNamespace, err := GetKuadrantNamespace(ctx, r.Client)
+	if err != nil {
+		return ctrl.Result{}, nil
+	}
+
+	if kuadrantNamespace == "" {
 		logger.V(1).Info("Kuadrant CR not found, skipping enforcement secret reconciliation")
 		return ctrl.Result{}, nil
 	}
