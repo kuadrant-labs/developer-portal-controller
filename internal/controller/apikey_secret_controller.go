@@ -179,7 +179,9 @@ func (r *APIKeySecretReconciler) desiredEnforcementSecret(ctx context.Context, a
 		enforcementSecretLabelAuthorinoManagedBy:  apiKeySecretLabelAuthorinoValue,
 	}
 
-	if apiKey.Status.AuthScheme != nil {
+	if apiKey.Status.AuthScheme != nil &&
+		apiKey.Status.AuthScheme.AuthenticationSpec != nil &&
+		apiKey.Status.AuthScheme.AuthenticationSpec.Selector != nil {
 		secretLabels = lo.Assign(apiKey.Status.AuthScheme.AuthenticationSpec.Selector.MatchLabels,
 			secretLabels)
 	}
