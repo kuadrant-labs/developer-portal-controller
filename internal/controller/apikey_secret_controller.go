@@ -25,7 +25,6 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -90,23 +89,28 @@ func (r *APIKeySecretReconciler) Reconcile(ctx context.Context, _ ctrl.Request) 
 		return apiKey.GetDeletionTimestamp() != nil
 	})
 
-	// Process each active APIKey
-	for idx := range activeAPIKeyList {
-		apiKey := &activeAPIKeyList[idx]
+	approvedAPIKeyList := lo.Filter(activeAPIKeyList, func(apiKey devportalv1alpha1.APIKey, _ int) bool {
+		return apiKey.IsApproved()
+	})
 
-		// Check APIKey conditions to determine action
-		approvedCondition := meta.FindStatusCondition(apiKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
-		isApproved := approvedCondition != nil && approvedCondition.Status == metav1.ConditionTrue
+	notApprovedAPIKeyList := lo.Filter(activeAPIKeyList, func(apiKey devportalv1alpha1.APIKey, _ int) bool {
+		return !apiKey.IsApproved()
+	})
+
+	// Process each active and approved APIKey
+	for idx := range approvedAPIKeyList {
+		apiKey := &approvedAPIKeyList[idx]
+
 		enforcementSecret, err := r.desiredEnforcementSecret(ctx, apiKey, kuadrantNamespace)
 		if err != nil {
+			logger.Error(err, "failed to generate desired enforcement secret", "apiKey", client.ObjectKeyFromObject(apiKey))
 			return ctrl.Result{}, err
 		}
 		if enforcementSecret == nil {
-			continue
-		}
-
-		if !isApproved {
-			reconcilers.TagObjectToDelete(enforcementSecret)
+			// This should never happen - desiredEnforcementSecret always returns either (secret, nil) or (nil, error)
+			err := fmt.Errorf("desiredEnforcementSecret returned nil secret without error for APIKey %s/%s", apiKey.Namespace, apiKey.Name)
+			logger.Error(err, "unexpected nil enforcement secret")
+			return ctrl.Result{}, err
 		}
 		_, err = r.ReconcileResource(ctx, &corev1.Secret{}, enforcementSecret, reconcilers.CreateOnlyMutator)
 		if err != nil {
@@ -115,9 +119,10 @@ func (r *APIKeySecretReconciler) Reconcile(ctx context.Context, _ ctrl.Request) 
 		}
 	}
 
-	// Process each deleting APIKey
-	for idx := range deletingAPIKeyList {
-		apiKey := &deletingAPIKeyList[idx]
+	// Process each deleting or not-approved APIKey - delete their enforcement secrets
+	toDeleteList := append(deletingAPIKeyList, notApprovedAPIKeyList...)
+	for idx := range toDeleteList {
+		apiKey := &toDeleteList[idx]
 		enforcementSecret := &corev1.Secret{}
 		enforcementSecret.Name = enforcementSecretName(apiKey)
 		enforcementSecret.Namespace = kuadrantNamespace
@@ -129,8 +134,9 @@ func (r *APIKeySecretReconciler) Reconcile(ctx context.Context, _ ctrl.Request) 
 }
 
 func (r *APIKeySecretReconciler) desiredEnforcementSecret(ctx context.Context, apiKey *devportalv1alpha1.APIKey, kuadrantNamespace string) (*corev1.Secret, error) {
-	logger := logf.FromContext(ctx, "apikey", client.ObjectKeyFromObject(apiKey))
-
+	if !apiKey.IsApproved() {
+		return nil, fmt.Errorf("trying to compute enforcement secret for APIKey %s/%s not approved, this indicates the secret was deleted after approval or a race condition occurred", apiKey.Namespace, apiKey.Name)
+	}
 	// Read API key value from consumer's secret
 	// Note: The apikey_status_controller validates the secret and sets Failed condition if needed
 	consumerSecret := &corev1.Secret{}
@@ -141,21 +147,25 @@ func (r *APIKeySecretReconciler) desiredEnforcementSecret(ctx context.Context, a
 
 	if err := r.Get(ctx, consumerSecretKey, consumerSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Secret not found - status controller will handle setting Failed condition
-			logger.V(1).Info("consumer secret not found, skipping enforcement secret creation", "secret", consumerSecretKey)
-			return nil, nil
+			// This should never happen for approved APIKeys - the status controller validates the secret exists
+			// and sets Failed condition if missing. If we reach here, it indicates a race condition or
+			// the secret was deleted after approval.
+			return nil, fmt.Errorf("consumer secret %s not found for approved APIKey %s/%s - this indicates the secret was deleted after approval or a race condition occurred",
+				consumerSecretKey, apiKey.Namespace, apiKey.Name)
 		}
-		// Other errors (permission denied, network issues, etc.) should be returned
-		logger.Error(err, "failed to read consumer secret")
-		return nil, err
+		// Other errors (permission denied, network issues, etc.)
+		return nil, fmt.Errorf("failed to read consumer secret %s for APIKey %s/%s: %w",
+			consumerSecretKey, apiKey.Namespace, apiKey.Name, err)
 	}
 
 	// Get api_key entry from consumer secret
 	apiKeyValue, ok := consumerSecret.Data[apiKeySecretKey]
 	if !ok {
-		// Missing api_key entry - status controller will handle setting Failed condition
-		logger.V(1).Info("consumer secret does not contain api_key entry, skipping enforcement secret creation", "secret", consumerSecretKey)
-		return nil, nil
+		// This should never happen for approved APIKeys - the status controller validates the api_key entry exists
+		// and sets Failed condition if missing. If we reach here, it indicates a race condition or
+		// the secret was modified after approval.
+		return nil, fmt.Errorf("consumer secret %s is missing '%s' entry for approved APIKey %s/%s - this indicates the secret was modified after approval or a race condition occurred",
+			consumerSecretKey, apiKeySecretKey, apiKey.Namespace, apiKey.Name)
 	}
 
 	secretLabels := map[string]string{

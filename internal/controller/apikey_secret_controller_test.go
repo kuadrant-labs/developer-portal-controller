@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -304,6 +303,118 @@ var _ = Describe("APIKeySecret Controller", func() {
 		})
 	})
 
+	Context("When APIKey transitions from Approved to Failed", func() {
+		var (
+			apiKey         *devportalv1alpha1.APIKey
+			consumerSecret *corev1.Secret
+		)
+
+		ctx := context.Background()
+
+		BeforeEach(func() {
+			By("Creating consumer secret with API key")
+			consumerSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: consumerNamespace,
+				},
+				Type: corev1.SecretTypeOpaque,
+				Data: map[string][]byte{
+					apiKeySecretKey: []byte("test-api-key-value"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, consumerSecret)).To(Succeed())
+
+			By("Creating an APIKey with Approved condition")
+			apiKey = &devportalv1alpha1.APIKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      apiKeyName,
+					Namespace: consumerNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeySpec{
+					APIProductRef: devportalv1alpha1.APIProductReference{
+						Name:      apiProductName,
+						Namespace: consumerNamespace,
+					},
+					SecretRef: corev1.LocalObjectReference{
+						Name: secretName,
+					},
+					PlanTier: "premium",
+					UseCase:  "Testing Approved to Failed transition",
+					RequestedBy: devportalv1alpha1.RequestedBy{
+						UserID: "test-user",
+						Email:  "test@example.com",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, apiKey)).To(Succeed())
+
+			apiKey.Status.Conditions = []metav1.Condition{
+				{
+					Type:               devportalv1alpha1.APIKeyConditionApproved,
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: apiKey.Generation,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "Approved",
+					Message:            "API key approved",
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, apiKey)).To(Succeed())
+		})
+
+		It("should delete enforcement secret when consumer secret is removed and APIKey transitions to Failed", func() {
+			controllerReconciler := &APIKeySecretReconciler{
+				BaseReconciler: reconcilers.BaseReconciler{
+					Client: k8sClient,
+					Scheme: k8sClient.Scheme(),
+				},
+			}
+
+			By("Creating enforcement secret for approved APIKey")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying enforcement secret exists")
+			enforcementSecret := &corev1.Secret{}
+			enforcementSecretKey := types.NamespacedName{
+				Name:      enforcementSecretName(apiKey),
+				Namespace: kuadrantNamespace,
+			}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
+			Expect(string(enforcementSecret.Data[apiKeySecretKey])).To(Equal("test-api-key-value"))
+
+			By("Deleting consumer secret (simulating external deletion)")
+			Expect(k8sClient.Delete(ctx, consumerSecret)).To(Succeed())
+
+			By("Setting Failed condition on APIKey (simulating status controller detecting missing secret)")
+			latestAPIKey := &devportalv1alpha1.APIKey{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
+			latestAPIKey.Status.Conditions = []metav1.Condition{
+				{
+					Type:               devportalv1alpha1.APIKeyConditionFailed,
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: latestAPIKey.Generation,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "SecretNotFound",
+					Message:            "Consumer secret not found",
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, latestAPIKey)).To(Succeed())
+
+			By("Running reconciliation after Failed condition is set")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying enforcement secret was deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
+				return apierrors.IsNotFound(err)
+			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+		})
+	})
+
 	Context("When consumer secret does not exist", func() {
 		var (
 			apiKey *devportalv1alpha1.APIKey
@@ -350,7 +461,7 @@ var _ = Describe("APIKeySecret Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, apiKey)).To(Succeed())
 		})
 
-		It("should skip enforcement secret creation when consumer secret not found", func() {
+		It("should return error when consumer secret not found for approved APIKey", func() {
 			controllerReconciler := &APIKeySecretReconciler{
 				BaseReconciler: reconcilers.BaseReconciler{
 					Client: k8sClient,
@@ -360,7 +471,10 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 			By("Running reconciliation")
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("consumer secret"))
+			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(err.Error()).To(ContainSubstring("approved APIKey"))
 
 			By("Verifying enforcement secret was not created")
 			enforcementSecret := &corev1.Secret{}
@@ -368,19 +482,8 @@ var _ = Describe("APIKeySecret Controller", func() {
 				Name:      enforcementSecretName(apiKey),
 				Namespace: kuadrantNamespace,
 			}
-			Consistently(func() bool {
-				err := k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
-				return apierrors.IsNotFound(err)
-			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
-
-			By("Verifying APIKey status was not modified by secret controller")
-			// Note: The apikey_status_controller is responsible for setting Failed condition
-			latestAPIKey := &devportalv1alpha1.APIKey{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
-			// Status should still be Approved (not modified by secret controller)
-			approvedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
-			Expect(approvedCondition).NotTo(BeNil())
-			Expect(approvedCondition.Status).To(Equal(metav1.ConditionTrue))
+			err = k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 
@@ -443,7 +546,7 @@ var _ = Describe("APIKeySecret Controller", func() {
 			Expect(k8sClient.Status().Update(ctx, apiKey)).To(Succeed())
 		})
 
-		It("should skip enforcement secret creation when api_key entry is missing", func() {
+		It("should return error when api_key entry is missing for approved APIKey", func() {
 			controllerReconciler := &APIKeySecretReconciler{
 				BaseReconciler: reconcilers.BaseReconciler{
 					Client: k8sClient,
@@ -453,7 +556,11 @@ var _ = Describe("APIKeySecret Controller", func() {
 
 			By("Running reconciliation")
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("consumer secret"))
+			Expect(err.Error()).To(ContainSubstring("missing"))
+			Expect(err.Error()).To(ContainSubstring("api_key"))
+			Expect(err.Error()).To(ContainSubstring("approved APIKey"))
 
 			By("Verifying enforcement secret was not created")
 			enforcementSecret := &corev1.Secret{}
@@ -461,19 +568,8 @@ var _ = Describe("APIKeySecret Controller", func() {
 				Name:      enforcementSecretName(apiKey),
 				Namespace: kuadrantNamespace,
 			}
-			Consistently(func() bool {
-				err := k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
-				return apierrors.IsNotFound(err)
-			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
-
-			By("Verifying APIKey status was not modified by secret controller")
-			// Note: The apikey_status_controller is responsible for setting Failed condition
-			latestAPIKey := &devportalv1alpha1.APIKey{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: apiKeyName, Namespace: consumerNamespace}, latestAPIKey)).To(Succeed())
-			// Status should still be Approved (not modified by secret controller)
-			approvedCondition := meta.FindStatusCondition(latestAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
-			Expect(approvedCondition).NotTo(BeNil())
-			Expect(approvedCondition.Status).To(Equal(metav1.ConditionTrue))
+			err = k8sClient.Get(ctx, enforcementSecretKey, enforcementSecret)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 
