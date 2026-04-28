@@ -176,27 +176,39 @@ status:
 Check that the controller created the enforcement secret in the Kuadrant namespace:
 
 ```bash
-# The secret should be in the kuadrant namespace (or controller namespace)
-# Check for secret with matching labels
-kubectl get secrets -n kuadrant-system -l "devportal.kuadrant.io/apikey" 2>/dev/null 
+# Find the enforcement secret using labels (secret name includes a hash suffix)
+kubectl get secrets -n kuadrant-system \
+  -l "devportal.kuadrant.io/apikey=gamestore-apikey,devportal.kuadrant.io/apikey-namespace=consumer-app"
 ```
 
 **Expected:**
 
-- A secret exists with the API key value
+- A secret exists with a name like `devportal-consumer-app-gamestore-apikey-{8-char-hash}`
 
 **Inspect the secret:**
 
 ```bash
-kubectl get secret -n kuadrant-system devportal-consumer-app-gamestore-apikey -o yaml
+# Get the secret name
+SECRET_NAME=$(kubectl get secrets -n kuadrant-system \
+  -l "devportal.kuadrant.io/apikey=gamestore-apikey,devportal.kuadrant.io/apikey-namespace=consumer-app" \
+  -o jsonpath='{.items[0].metadata.name}')
 
-# Decode and verify
-kubectl get secret -n kuadrant-system devportal-consumer-app-gamestore-apikey -o jsonpath='{.data.api_key}' | base64 -d
+# View the full secret
+kubectl get secret -n kuadrant-system $SECRET_NAME -o yaml
+
+# Decode and verify the API key value
+kubectl get secret -n kuadrant-system $SECRET_NAME -o jsonpath='{.data.api_key}' | base64 -d
 ```
 
 **Expected:**
 
-- Secret has appropriate labels (e.g., `app: gamestore`, `role: admin` for the VIP users selector)
+- Secret has appropriate labels:
+  - `devportal.kuadrant.io/apiproduct=gamestore-api`
+  - `devportal.kuadrant.io/apiproduct-namespace=gamestore`
+  - `devportal.kuadrant.io/apikey=gamestore-apikey`
+  - `devportal.kuadrant.io/apikey-namespace=consumer-app`
+  - `authorino.kuadrant.io/managed-by=authorino`
+  - Plus any selector labels from AuthenticationSpec (e.g., `app: gamestore`, `role: admin` for VIP users)
 - Secret contains the `api_key` field with correct value (base64 encoded)
 
 ---
@@ -265,23 +277,24 @@ Expected: Empty (no Approved condition)
 Check that the controller has removed the enforcement secret, making the API key no longer effective:
 
 ```bash
-# Try to find the secret
-kubectl get secret -n kuadrant-system devportal-consumer-app-gamestore-apikey
+# Try to find the secret using labels
+kubectl get secrets -n kuadrant-system \
+  -l "devportal.kuadrant.io/apikey=gamestore-apikey,devportal.kuadrant.io/apikey-namespace=consumer-app"
 ```
 
 **Expected output:**
 
 ```
-Error from server (NotFound): secrets "devportal-consumer-app-gamestore-apikey" not found
+No resources found in kuadrant-system namespace.
 ```
 
-**Alternative check - list all devportal secrets:**
+**Alternative check - list all devportal enforcement secrets:**
 
 ```bash
-kubectl get secrets -n kuadrant-system -l "devportal.kuadrant.io/apikey" 2>/dev/null
+kubectl get secrets -n kuadrant-system -l "devportal.kuadrant.io/apikey"
 ```
 
-Expected: No resources found (or the specific secret is gone)
+Expected: No resources found (or the specific secret for gamestore-apikey is gone)
 
 ---
 
