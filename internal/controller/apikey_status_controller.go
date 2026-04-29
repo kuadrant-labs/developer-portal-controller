@@ -165,7 +165,6 @@ func (r *APIKeyStatusReconciler) calculateStatus(ctx context.Context, apiKey *de
 	}
 	newStatus.APIHostname = apiHostName
 
-	// No active condition - pending state (empty conditions)
 	return newStatus, nil
 }
 

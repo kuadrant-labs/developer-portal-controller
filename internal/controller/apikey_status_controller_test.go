@@ -654,20 +654,25 @@ var _ = Describe("APIKey Status Controller", func() {
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Verifying no approval/denial condition is set (pending state)")
+			By("Verifying Pending condition is set (invalid approval is ignored)")
 			updatedAPIKey := &devportalv1alpha1.APIKey{}
-			Consistently(func() bool {
+			Eventually(func(g Gomega) {
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      apiKeyName,
 					Namespace: consumerNamespace,
 				}, updatedAPIKey)
-				if err != nil {
-					return false
-				}
+				g.Expect(err).NotTo(HaveOccurred())
+
+				pendingCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionPending)
+				g.Expect(pendingCondition).NotTo(BeNil())
+				g.Expect(pendingCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(pendingCondition.Reason).To(Equal("AwaitingApproval"))
+
 				approvedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+				g.Expect(approvedCondition).To(BeNil())
 				deniedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionDenied)
-				return approvedCondition == nil && deniedCondition == nil
-			}, time.Second*2, time.Millisecond*250).Should(BeTrue())
+				g.Expect(deniedCondition).To(BeNil())
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
 		})
 
 		It("should populate APIHostname from HTTPRoute", func() {
