@@ -304,6 +304,32 @@ func (r *APIKeyStatusReconciler) calculateFailedCondition(ctx context.Context, a
 		}, nil
 	}
 
+	// Check if the APIProduct has API key authentication scheme
+	if apiProduct.Status.DiscoveredAuthScheme == nil {
+		return &metav1.Condition{
+			Type:               devportalv1alpha1.APIKeyConditionFailed,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: apiKey.Generation,
+			Reason:             "AuthSchemeNotFound",
+			Message:            fmt.Sprintf("APIProduct %s does not have a discovered authentication scheme", apiProductKey),
+		}, nil
+	}
+
+	// Check if the APIProduct has API key authentication method
+	apiKeyAuthMethods := lo.FilterValues(apiProduct.Status.DiscoveredAuthScheme.Authentication, func(k string, v kuadrantapiv1.MergeableAuthenticationSpec) bool {
+		return v.GetMethod() == authorinov1beta3.ApiKeyAuthentication
+	})
+
+	if len(apiKeyAuthMethods) == 0 {
+		return &metav1.Condition{
+			Type:               devportalv1alpha1.APIKeyConditionFailed,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: apiKey.Generation,
+			Reason:             "APIKeyAuthSchemeNotFound",
+			Message:            fmt.Sprintf("APIProduct %s does not have an API key authentication scheme configured", apiProductKey),
+		}, nil
+	}
+
 	// No failure detected
 	return nil, nil
 }

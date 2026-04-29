@@ -1421,5 +1421,218 @@ var _ = Describe("APIKey Status Controller", func() {
 			Expect(approvedCondition.Status).To(Equal(metav1.ConditionTrue))
 			Expect(approvedCondition.LastTransitionTime).To(Equal(initialTimestamp))
 		})
+
+		It("should set Failed condition when APIProduct has no API key authentication scheme", func() {
+			controllerReconciler := &APIKeyStatusReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Creating an APIProduct without API key authentication scheme")
+			noAuthProduct := &devportalv1alpha1.APIProduct{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-auth-product",
+					Namespace: apiProductNamespace,
+				},
+				Spec: devportalv1alpha1.APIProductSpec{
+					DisplayName:   "No Auth API",
+					ApprovalMode:  "manual",
+					PublishStatus: "Published",
+					TargetRef: gatewayapiv1alpha2.LocalPolicyTargetReference{
+						Group: gwapiv1.GroupName,
+						Kind:  "HTTPRoute",
+						Name:  gwapiv1.ObjectName(httpRouteName),
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, noAuthProduct)).To(Succeed())
+
+			By("Setting APIProduct status with discovered plans but without API key auth scheme")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(noAuthProduct), noAuthProduct); err != nil {
+					return err
+				}
+
+				basicLimit := 10
+				noAuthProduct.Status.DiscoveredPlans = []devportalv1alpha1.PlanSpec{
+					{
+						Tier: "basic",
+						Limits: planpolicyv1alpha1.Limits{
+							Daily: &basicLimit,
+						},
+					},
+				}
+				// Set DiscoveredAuthScheme with JWT authentication (no API key)
+				noAuthProduct.Status.DiscoveredAuthScheme = &kuadrantapiv1.AuthSchemeSpec{
+					Authentication: map[string]kuadrantapiv1.MergeableAuthenticationSpec{
+						"oidc": {
+							AuthenticationSpec: authorinov1beta3.AuthenticationSpec{
+								AuthenticationMethodSpec: authorinov1beta3.AuthenticationMethodSpec{
+									Jwt: &authorinov1beta3.JwtAuthenticationSpec{
+										IssuerUrl: "https://example.com",
+									},
+								},
+							},
+						},
+					},
+				}
+				return k8sClient.Status().Update(ctx, noAuthProduct)
+			}, time.Second*5, time.Millisecond*100).Should(Succeed())
+
+			By("Creating a Secret for the APIKey")
+			noAuthSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-auth-secret",
+					Namespace: consumerNamespace,
+				},
+				Data: map[string][]byte{
+					"api_key": []byte("test-api-key-value"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, noAuthSecret)).To(Succeed())
+
+			By("Creating an APIKey that references the APIProduct without API key auth")
+			noAuthAPIKey := &devportalv1alpha1.APIKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-auth-apikey",
+					Namespace: consumerNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeySpec{
+					APIProductRef: devportalv1alpha1.APIProductReference{
+						Name:      "no-auth-product",
+						Namespace: apiProductNamespace,
+					},
+					SecretRef: corev1.LocalObjectReference{
+						Name: "no-auth-secret",
+					},
+					PlanTier: "basic",
+					UseCase:  "Testing no auth scheme",
+					RequestedBy: devportalv1alpha1.RequestedBy{
+						UserID: "test-user",
+						Email:  "test@example.com",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, noAuthAPIKey)).To(Succeed())
+
+			By("Running reconciliation")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying Failed condition is set with APIKeyAuthSchemeNotFound reason")
+			updatedAPIKey := &devportalv1alpha1.APIKey{}
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "no-auth-apikey",
+					Namespace: consumerNamespace,
+				}, updatedAPIKey)
+				g.Expect(err).NotTo(HaveOccurred())
+				failedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
+				g.Expect(failedCondition).NotTo(BeNil())
+				g.Expect(failedCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(failedCondition.Reason).To(Equal("APIKeyAuthSchemeNotFound"))
+				g.Expect(failedCondition.Message).To(ContainSubstring("does not have an API key authentication scheme configured"))
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
+		})
+
+		It("should set Failed condition when APIProduct has no DiscoveredAuthScheme at all", func() {
+			controllerReconciler := &APIKeyStatusReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Creating an APIProduct without any DiscoveredAuthScheme")
+			noSchemeProduct := &devportalv1alpha1.APIProduct{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-scheme-product",
+					Namespace: apiProductNamespace,
+				},
+				Spec: devportalv1alpha1.APIProductSpec{
+					DisplayName:   "No Scheme API",
+					ApprovalMode:  "manual",
+					PublishStatus: "Published",
+					TargetRef: gatewayapiv1alpha2.LocalPolicyTargetReference{
+						Group: gwapiv1.GroupName,
+						Kind:  "HTTPRoute",
+						Name:  gwapiv1.ObjectName(httpRouteName),
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, noSchemeProduct)).To(Succeed())
+
+			By("Setting APIProduct status with discovered plans but NO DiscoveredAuthScheme")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(noSchemeProduct), noSchemeProduct); err != nil {
+					return err
+				}
+
+				basicLimit := 10
+				noSchemeProduct.Status.DiscoveredPlans = []devportalv1alpha1.PlanSpec{
+					{
+						Tier: "basic",
+						Limits: planpolicyv1alpha1.Limits{
+							Daily: &basicLimit,
+						},
+					},
+				}
+				noSchemeProduct.Status.DiscoveredAuthScheme = nil
+				return k8sClient.Status().Update(ctx, noSchemeProduct)
+			}, time.Second*5, time.Millisecond*100).Should(Succeed())
+
+			By("Creating a Secret for the APIKey")
+			noSchemeSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-scheme-secret",
+					Namespace: consumerNamespace,
+				},
+				Data: map[string][]byte{
+					"api_key": []byte("test-api-key-value"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, noSchemeSecret)).To(Succeed())
+
+			By("Creating an APIKey that references the APIProduct without DiscoveredAuthScheme")
+			noSchemeAPIKey := &devportalv1alpha1.APIKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "no-scheme-apikey",
+					Namespace: consumerNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeySpec{
+					APIProductRef: devportalv1alpha1.APIProductReference{
+						Name:      "no-scheme-product",
+						Namespace: apiProductNamespace,
+					},
+					SecretRef: corev1.LocalObjectReference{
+						Name: "no-scheme-secret",
+					},
+					PlanTier: "basic",
+					UseCase:  "Testing no discovered auth scheme",
+					RequestedBy: devportalv1alpha1.RequestedBy{
+						UserID: "test-user",
+						Email:  "test@example.com",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, noSchemeAPIKey)).To(Succeed())
+
+			By("Running reconciliation")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying Failed condition is set with AuthSchemeNotFound reason")
+			updatedAPIKey := &devportalv1alpha1.APIKey{}
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "no-scheme-apikey",
+					Namespace: consumerNamespace,
+				}, updatedAPIKey)
+				g.Expect(err).NotTo(HaveOccurred())
+				failedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
+				g.Expect(failedCondition).NotTo(BeNil())
+				g.Expect(failedCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(failedCondition.Reason).To(Equal("AuthSchemeNotFound"))
+				g.Expect(failedCondition.Message).To(ContainSubstring("does not have a discovered authentication scheme"))
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
+		})
 	})
 })
