@@ -35,6 +35,9 @@ const (
 
 	// APIKeyConditionFailed indicates the APIKey processing has failed
 	APIKeyConditionFailed string = "Failed"
+
+	// APIKeyConditionPending indicates the APIKey is waiting for approval
+	APIKeyConditionPending string = "Pending"
 )
 
 type APIProductReference struct {

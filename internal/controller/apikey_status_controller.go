@@ -180,7 +180,7 @@ func (r *APIKeyStatusReconciler) calculateStatusConditions(ctx context.Context, 
 	if failedCondition != nil {
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionApproved)
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionDenied)
-		meta.SetStatusCondition(&conditions, *failedCondition)
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionPending)
 		meta.SetStatusCondition(&conditions, *failedCondition)
 		return conditions, nil
 	}
@@ -190,6 +190,7 @@ func (r *APIKeyStatusReconciler) calculateStatusConditions(ctx context.Context, 
 	if deniedCondition != nil {
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionApproved)
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionFailed)
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionPending)
 		meta.SetStatusCondition(&conditions, *deniedCondition)
 		return conditions, nil
 	}
@@ -199,7 +200,18 @@ func (r *APIKeyStatusReconciler) calculateStatusConditions(ctx context.Context, 
 	if approvedCondition != nil {
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionDenied)
 		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionFailed)
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionPending)
 		meta.SetStatusCondition(&conditions, *approvedCondition)
+		return conditions, nil
+	}
+
+	// Check for Pending condition - if no approval, denial, or failure
+	pendingCondition := r.calculatePendingCondition(ctx, apiKey)
+	if pendingCondition != nil {
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionApproved)
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionDenied)
+		meta.RemoveStatusCondition(&conditions, devportalv1alpha1.APIKeyConditionFailed)
+		meta.SetStatusCondition(&conditions, *pendingCondition)
 		return conditions, nil
 	}
 
@@ -368,6 +380,23 @@ func (r *APIKeyStatusReconciler) calculateApprovedCondition(ctx context.Context,
 			ObservedGeneration: apiKey.Generation,
 			Reason:             "Approved",
 			Message:            message,
+		}
+	}
+
+	return nil
+}
+
+func (r *APIKeyStatusReconciler) calculatePendingCondition(ctx context.Context, apiKey *devportalv1alpha1.APIKey) *metav1.Condition {
+	// If there's no approval (either approved or denied), the APIKey is pending
+	approval := r.findAPIKeyApproval(ctx, apiKey)
+
+	if approval == nil {
+		return &metav1.Condition{
+			Type:               devportalv1alpha1.APIKeyConditionPending,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: apiKey.Generation,
+			Reason:             "AwaitingApproval",
+			Message:            "API key request is awaiting approval",
 		}
 	}
 

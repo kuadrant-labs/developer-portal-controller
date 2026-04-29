@@ -313,6 +313,39 @@ var _ = Describe("APIKey Status Controller", func() {
 			}, time.Second*10, time.Millisecond*250).Should(Succeed())
 		})
 
+		It("should set Pending condition when no approval exists", func() {
+			controllerReconciler := &APIKeyStatusReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Running reconciliation")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying Pending condition is set")
+			updatedAPIKey := &devportalv1alpha1.APIKey{}
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      apiKeyName,
+					Namespace: consumerNamespace,
+				}, updatedAPIKey)
+				g.Expect(err).NotTo(HaveOccurred())
+				pendingCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionPending)
+				g.Expect(pendingCondition).NotTo(BeNil())
+				g.Expect(pendingCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(pendingCondition.Reason).To(Equal("AwaitingApproval"))
+
+				// No other conditions should be present
+				approvedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+				g.Expect(approvedCondition).To(BeNil())
+				deniedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionDenied)
+				g.Expect(deniedCondition).To(BeNil())
+				failedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionFailed)
+				g.Expect(failedCondition).To(BeNil())
+			}, time.Second*10, time.Millisecond*250).Should(Succeed())
+		})
+
 		It("should set Failed condition when Secret does not have api_key entry", func() {
 			controllerReconciler := &APIKeyStatusReconciler{
 				Client: k8sClient,
@@ -373,6 +406,82 @@ var _ = Describe("APIKey Status Controller", func() {
 				return failedCondition != nil &&
 					failedCondition.Status == metav1.ConditionTrue &&
 					failedCondition.Reason == "SecretAPIKeyNotFound"
+			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+		})
+
+		It("should transition from Pending to Approved when approval is granted", func() {
+			controllerReconciler := &APIKeyStatusReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Running initial reconciliation to set Pending state")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying initial Pending condition")
+			updatedAPIKey := &devportalv1alpha1.APIKey{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      apiKeyName,
+					Namespace: consumerNamespace,
+				}, updatedAPIKey)
+				if err != nil {
+					return false
+				}
+				pendingCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionPending)
+				return pendingCondition != nil && pendingCondition.Status == metav1.ConditionTrue
+			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+
+			By("Creating an approval")
+			approval := &devportalv1alpha1.APIKeyApproval{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "transition-approval",
+					Namespace: apiProductNamespace,
+				},
+				Spec: devportalv1alpha1.APIKeyApprovalSpec{
+					APIKeyRequestRef: devportalv1alpha1.APIKeyRequestReference{
+						Name: APIKeyRequestName(apiKey),
+					},
+					Approved:   true,
+					ReviewedBy: "admin@example.com",
+					ReviewedAt: metav1.Now(),
+					Message:    "Approved",
+				},
+			}
+			Expect(k8sClient.Create(ctx, approval)).To(Succeed())
+
+			approval.Status.Conditions = []metav1.Condition{
+				{
+					Type:               devportalv1alpha1.APIKeyApprovalConditionValid,
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: approval.Generation,
+					Reason:             "Valid",
+					Message:            "Valid approval",
+					LastTransitionTime: metav1.Now(),
+				},
+			}
+			approval.Status.ObservedGeneration = approval.Generation
+			Expect(k8sClient.Status().Update(ctx, approval)).To(Succeed())
+
+			By("Running reconciliation after approval")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying transition to Approved and Pending removed")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      apiKeyName,
+					Namespace: consumerNamespace,
+				}, updatedAPIKey)
+				if err != nil {
+					return false
+				}
+				approvedCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionApproved)
+				pendingCondition := meta.FindStatusCondition(updatedAPIKey.Status.Conditions, devportalv1alpha1.APIKeyConditionPending)
+				return approvedCondition != nil &&
+					approvedCondition.Status == metav1.ConditionTrue &&
+					pendingCondition == nil
 			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
 		})
 

@@ -66,15 +66,26 @@ EOF
 
 ### 4. Consumer: Check APIKey Status (Pending)
 
-Check the APIKey status conditions - it should be empty (Pending state):
+Check the APIKey status - it should show a Pending condition:
 
 ```bash
-kubectl get apikey gamestore-apikey -n consumer-app -o jsonpath='{.status.conditions}'
+kubectl get apikey gamestore-apikey -n consumer-app -o jsonpath='{.status}' | yq e -P
 ```
 
 **Expected output:**
 
-No conditions array, this indicates the request is **Pending** approval.
+```yaml
+status:
+  conditions:
+  - type: Pending
+    status: "True"
+    reason: AwaitingApproval
+    message: "API key request is awaiting approval"
+    lastTransitionTime: "<timestamp>"
+  observedGeneration: 1
+```
+
+This indicates the request is awaiting approval from the API owner.
 
 ---
 
@@ -150,6 +161,8 @@ Back as the consumer, check that the APIKey has been approved:
 ```bash
 kubectl get apikey gamestore-apikey -n consumer-app -o jsonpath='{.status}' | yq e -P
 ```
+
+The APIKey should now show an `Approved` condition (replacing the previous `Pending` condition):
 
 **Expected output should include:**
 
