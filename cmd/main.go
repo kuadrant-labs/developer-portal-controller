@@ -305,6 +305,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "APIKeyApprovalStatus")
 		os.Exit(1)
 	}
+	if err := (&controller.APIKeyAutoApprovalReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "APIKeyAutoApproval")
+		os.Exit(1)
+	}
 	if err := (&controller.APIKeySecretReconciler{
 		BaseReconciler: reconcilers.BaseReconciler{
 			Client: mgr.GetClient(),
