@@ -29,12 +29,75 @@ import (
 
 var _ = Describe("Automatic Approval", Ordered, func() {
 	const (
-		ownerNamespace    = "api-owner-test"
-		consumerNamespace = "api-consumer-test"
-		kuadrantNamespace = "kuadrant-ns"
-		apiProductName    = "auto-approve-api"
-		apiKeyName        = "test-auto-apikey"
+		ownerNamespace      = "api-owner-test"
+		consumerNamespace   = "api-consumer-test"
+		kuadrantNamespace   = "kuadrant-ns"
+		apiProductName      = "auto-approve-api"
+		apiKeyName          = "test-auto-apikey"
+		controllerNamespace = "developer-portal-controller-system"
 	)
+
+	AfterEach(func() {
+		specReport := CurrentSpecReport()
+		if specReport.Failed() {
+			By("Fetching controller manager pod name")
+			cmd := exec.Command("kubectl", "get",
+				"pods", "-l", "control-plane=controller-manager",
+				"-o", "go-template={{ range .items }}"+
+					"{{ if not .metadata.deletionTimestamp }}"+
+					"{{ .metadata.name }}"+
+					"{{ \"\\n\" }}{{ end }}{{ end }}",
+				"-n", controllerNamespace,
+			)
+			podOutput, err := utils.Run(cmd)
+			if err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get controller pod name: %s\n", err)
+				return
+			}
+			podNames := utils.GetNonEmptyLines(podOutput)
+			if len(podNames) == 0 {
+				_, _ = fmt.Fprintf(GinkgoWriter, "No controller pod found\n")
+				return
+			}
+			controllerPodName := podNames[0]
+
+			By("Fetching controller manager pod logs")
+			cmd = exec.Command("kubectl", "logs", controllerPodName, "-n", controllerNamespace)
+			controllerLogs, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n%s\n", controllerLogs)
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Controller logs: %s\n", err)
+			}
+
+			By("Fetching Kubernetes events in owner namespace")
+			cmd = exec.Command("kubectl", "get", "events", "-n", ownerNamespace, "--sort-by=.lastTimestamp")
+			eventsOutput, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Events in %s:\n%s\n", ownerNamespace, eventsOutput)
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get events in %s: %s\n", ownerNamespace, err)
+			}
+
+			By("Fetching Kubernetes events in consumer namespace")
+			cmd = exec.Command("kubectl", "get", "events", "-n", consumerNamespace, "--sort-by=.lastTimestamp")
+			eventsOutput, err = utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Events in %s:\n%s\n", consumerNamespace, eventsOutput)
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get events in %s: %s\n", consumerNamespace, err)
+			}
+
+			By("Fetching controller manager pod description")
+			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", controllerNamespace)
+			podDescription, err := utils.Run(cmd)
+			if err == nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Pod description:\n%s\n", podDescription)
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to describe controller pod: %s\n", err)
+			}
+		}
+	})
 
 	BeforeAll(func() {
 		By("creating the owner namespace")
