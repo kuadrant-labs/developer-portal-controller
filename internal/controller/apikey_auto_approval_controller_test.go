@@ -209,7 +209,7 @@ var _ = Describe("APIKeyAutoApproval Controller", func() {
 
 			By("Verifying only one approval exists")
 			approvalList := &devportalv1alpha1.APIKeyApprovalList{}
-			Expect(k8sClient.List(ctx, approvalList)).To(Succeed())
+			Expect(k8sClient.List(ctx, approvalList, client.InNamespace(apiProductNamespace))).To(Succeed())
 			Expect(approvalList.Items).To(HaveLen(1), "Should not create duplicate approvals")
 		})
 	})
