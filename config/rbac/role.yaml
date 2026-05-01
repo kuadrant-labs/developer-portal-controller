@@ -19,6 +19,7 @@ rules:
   resources:
   - apikeyapprovals
   verbs:
+  - create
   - get
   - list
   - patch
