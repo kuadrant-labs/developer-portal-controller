@@ -138,7 +138,7 @@ func (r *APIKeyRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func apiKeyRequestSpecMutator(desired, existing *devportalv1alpha1.APIKeyRequest) bool {
+func apiKeyRequestSpecMutator(existing, desired *devportalv1alpha1.APIKeyRequest) bool {
 	needsUpdate := false
 
 	if !reflect.DeepEqual(existing.Spec, desired.Spec) {
@@ -153,6 +153,7 @@ func (r *APIKeyRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Watches(&devportalv1alpha1.APIProduct{}, handler.EnqueueRequestsFromMapFunc(r.enqueueClass)).
 		Watches(&devportalv1alpha1.APIKey{}, handler.EnqueueRequestsFromMapFunc(r.enqueueClass)).
+		Watches(&devportalv1alpha1.APIKeyRequest{}, handler.EnqueueRequestsFromMapFunc(r.enqueueClass)).
 		Named("apikeyrequest").
 		Complete(r)
 }

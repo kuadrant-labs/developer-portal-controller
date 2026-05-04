@@ -70,7 +70,7 @@ func (r *APIKeySecretReconciler) Reconcile(ctx context.Context, _ ctrl.Request) 
 	// The status controller will set Failed condition if Kuadrant CR doesn't exist
 	kuadrantNamespace, err := GetKuadrantNamespace(ctx, r.Client)
 	if err != nil {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, err
 	}
 
 	if kuadrantNamespace == "" {

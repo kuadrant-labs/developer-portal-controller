@@ -24,7 +24,7 @@ func Mutator[T client.Object](opts ...TypedMutateFn[T]) MutateFn {
 
 		// Loop through each option
 		for _, opt := range opts {
-			tmpUpdate := opt(desired, existing)
+			tmpUpdate := opt(existing, desired)
 			update = update || tmpUpdate
 		}
 

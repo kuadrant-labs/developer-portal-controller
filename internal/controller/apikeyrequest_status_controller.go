@@ -41,7 +41,6 @@ type APIKeyRequestStatusReconciler struct {
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyrequests,verbs=get;list;watch
 // +kubebuilder:rbac:groups=devportal.kuadrant.io,resources=apikeyrequests/status,verbs=get;update;patch
 
-// Reconcile creates and manages shadow APIKeyRequest resources for all APIKey objects
 func (r *APIKeyRequestStatusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 

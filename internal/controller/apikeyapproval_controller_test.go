@@ -161,8 +161,8 @@ var _ = Describe("APIKeyApproval Controller", func() {
 				return ownerRef.Name == APIKeyRequestName(apiKey) &&
 					ownerRef.Kind == "APIKeyRequest" &&
 					ownerRef.APIVersion == "devportal.kuadrant.io/v1alpha1" &&
-					*ownerRef.Controller == true &&
-					*ownerRef.BlockOwnerDeletion == true
+					ownerRef.Controller != nil && *ownerRef.Controller &&
+					ownerRef.BlockOwnerDeletion != nil && *ownerRef.BlockOwnerDeletion
 			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
 
 			By("Verifying owner reference is idempotent (not duplicated on second reconcile)")

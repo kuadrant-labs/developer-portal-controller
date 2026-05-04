@@ -331,20 +331,20 @@ spec:
 			Eventually(verifyAPIKeyRequestCreated).Should(Succeed())
 
 			By("verifying APIKeyApproval was automatically created")
+			apiKeyApprovalName := fmt.Sprintf("%s-auto", apiKeyRequestName)
 			verifyApprovalCreated := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "apikeyapproval",
-					"-n", ownerNamespace, "-o", "jsonpath={.items[*].metadata.name}")
+				cmd := exec.Command("kubectl", "get", "apikeyapproval", apiKeyApprovalName,
+					"-n", ownerNamespace, "-o", "jsonpath={.metadata.name}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).NotTo(BeEmpty(), "APIKeyApproval should be created")
-				g.Expect(output).To(ContainSubstring("auto"), "APIKeyApproval name should contain 'auto'")
+				g.Expect(output).To(Equal(apiKeyApprovalName), "APIKeyApproval should be created with deterministic name")
 			}
 			Eventually(verifyApprovalCreated).Should(Succeed())
 
 			By("verifying the approval was created by 'system'")
 			verifySystemReviewer := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "apikeyapproval",
-					"-n", ownerNamespace, "-o", "jsonpath={.items[0].spec.reviewedBy}")
+				cmd := exec.Command("kubectl", "get", "apikeyapproval", apiKeyApprovalName,
+					"-n", ownerNamespace, "-o", "jsonpath={.spec.reviewedBy}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("system"), "APIKeyApproval should be reviewed by 'system'")
@@ -353,8 +353,8 @@ spec:
 
 			By("verifying the approval is approved")
 			verifyApproved := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "apikeyapproval",
-					"-n", ownerNamespace, "-o", "jsonpath={.items[0].spec.approved}")
+				cmd := exec.Command("kubectl", "get", "apikeyapproval", apiKeyApprovalName,
+					"-n", ownerNamespace, "-o", "jsonpath={.spec.approved}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("true"), "APIKeyApproval should be approved")
@@ -363,8 +363,8 @@ spec:
 
 			By("verifying the approval reason is AutoApproved")
 			verifyReason := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "apikeyapproval",
-					"-n", ownerNamespace, "-o", "jsonpath={.items[0].spec.reason}")
+				cmd := exec.Command("kubectl", "get", "apikeyapproval", apiKeyApprovalName,
+					"-n", ownerNamespace, "-o", "jsonpath={.spec.reason}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("AutoApproved"), "APIKeyApproval reason should be AutoApproved")
