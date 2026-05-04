@@ -41,8 +41,9 @@ const (
 )
 
 type APIProductReference struct {
-	Name      string `json:"name"` // Just name for now, in the future we might want to add KGV.
-	Namespace string `json:"namespace"`
+	Name string `json:"name"` // Just name for now, in the future we might want to add KGV.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // APIKeySpec defines the desired state of APIKey.
