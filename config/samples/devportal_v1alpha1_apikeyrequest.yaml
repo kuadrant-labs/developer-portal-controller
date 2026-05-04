@@ -5,5 +5,15 @@ metadata:
     app.kubernetes.io/name: developer-portal-controller
     app.kubernetes.io/managed-by: kustomize
   name: apikeyrequest-sample
+  namespace: api-owner-ns
 spec:
-  # TODO(user): Add fields here
+  apiProductRef:
+    name: petstore-api
+  planTier: premium
+  useCase: "Mobile app integration for iOS and Android clients"
+  requestedBy:
+    userId: "user-12345"
+    email: "developer@example.com"
+  apiKeyRef:
+    name: my-api-key
+    namespace: consumer-ns
